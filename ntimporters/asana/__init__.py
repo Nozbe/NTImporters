@@ -18,8 +18,9 @@ def run_import(nt_auth_token: str, auth_token: str) -> Optional[str]:
         return "Missing 'auth_token'"
 
     nt_client = ApiClient(configuration=Configuration(
-        host="api4.nozbe.com",
-        api_key=nt_auth_token,
+        host="https://api4.nozbe.com/v1/api",
+        api_key={"ApiKeyAuth": nt_auth_token},
+        access_token=nt_auth_token,
     ))
-
     return None
+
