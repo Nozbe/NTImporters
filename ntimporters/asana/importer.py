@@ -11,9 +11,9 @@ from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
 SPEC = {
-    "code": "asana",
-    "name": "Asana",
-    "url": "https://developers.asana.com/docs/asana",
+    "code": "asana",  # codename / ID of importer
+    "name": "Asana",  # name of application
+    "url": "https://developers.asana.com/docs/asana",  # link to documentation / specs / API
 }
 
 FAKE_ID16 = 16 * "a"
@@ -36,6 +36,7 @@ COLOR_MAP = {
 }
 
 
+# main method called by Nozbe Teams app
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[str]:
     """Perform import from Asana to Nozbe Teams"""
     if not nt_auth_token:
