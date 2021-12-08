@@ -29,5 +29,5 @@ You are welcome to contribute to **NTImporters** project by creating PRs with im
 
 ### Contributing guide
 
-- Each importer should be located in a separate package in `/ntimporters`
+- Each importer should be located in a separate package in `/src/ntimporters`
 - Each importer should implement `SPEC` to identify importer and `run_import` method for performing import
