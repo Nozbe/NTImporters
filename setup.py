@@ -14,4 +14,8 @@ setup(
     author="jsamelak",
     author_email="jarek@nozbe.com",
     license="MIT",
+    install_requires=[
+        "python_dateutil",
+        "asana",
+    ]
 )
