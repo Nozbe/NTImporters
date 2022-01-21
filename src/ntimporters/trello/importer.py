@@ -1,5 +1,5 @@
 """Trello -> Nozbe Teams importer"""
-# import concurrent.futures
+import concurrent.futures
 import random
 from typing import Optional, Tuple
 
@@ -15,7 +15,7 @@ from openapi_client.model_utils import ModelNormal
 
 
 def strip_readonly(model: ModelNormal):
-    """ Strip read only fields before sending to server """
+    """Strip read only fields before sending to server"""
     for field in [
         elt
         for elt in model.attribute_map.values()
@@ -35,6 +35,7 @@ SPEC = {
     "code": "trello",  # codename / ID of importer
     "name": "Trello",  # name of application
     "url": "https://developer.atlassian.com/cloud/trello/guides/rest-api/api-introduction/",
+    "input_fields": ("nt_auth_token", "auth_token", "app_key"),
 }
 COLORS = [
     "aquamarine",
@@ -83,8 +84,7 @@ def run_import(nt_auth_token: str, auth_token: str, app_key: str, team_id: str) 
         _import_data(
             nt.ApiClient(
                 configuration=nt.Configuration(
-                    # host="http://localhost:8888/v1/api",
-                    host="https://api4.nozbe.com/v1/api",
+                    host="http://api4.nozbe.com/v1/api",
                     api_key={"ApiKeyAuth": nt_auth_token},
                 )
             ),
@@ -104,7 +104,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         """Import trello project"""
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
-            name=models.NameAllowEmpty("3" + project.get("name")),
+            name=models.NameAllowEmpty(project.get("name")),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -125,14 +125,15 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             nt_client, trello_client, nt_project_id, project, nt_members_by_email(nt_client)
         )
 
-    # with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-    for project in trello_client.projects():
-        _import_project(project)
-        break
-    # executor.map(_import_project, trello_client.projects())
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        executor.map(_import_project, trello_client.projects())
+    # for project in trello_client.projects():
+    #     _import_project(project)
 
 
-def _import_project_sections(nt_client, trello_client, nt_project_id, project, nt_members: tuple):
+def _import_project_sections(
+    nt_client, trello_client, nt_project_id: str, project: dict, nt_members: tuple[dict, str]
+):
     """Import trello lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
@@ -182,9 +183,7 @@ def _import_project_sections(nt_client, trello_client, nt_project_id, project, n
                     )
                 ):
                     _import_tags(nt_client, str(nt_task.id), task, tags_mapping)
-                    _import_comments(
-                        nt_client, trello_client, str(nt_task.id), task.get("id"), nt_members
-                    )
+                    _import_comments(nt_client, trello_client, str(nt_task.id), task.get("id"))
                     # TODO import attachments, reminders?
 
 
@@ -197,10 +196,12 @@ def _import_tags_per_project(nt_client, trello_client, project: dict) -> dict:
     for tag in trello_client.tags(project.get("id")):
         if (tag_name := tag.get("name")) not in nt_tags and (
             nt_tag := nt_api_tags.post_tag(
-                models.Tag(
-                    models.Id16ReadOnly(id16()),
-                    models.Name(tag_name),
-                    color=_map_color(tag.get("color")),
+                strip_readonly(
+                    models.Tag(
+                        models.Id16ReadOnly(id16()),
+                        models.Name(tag_name),
+                        color=_map_color(tag.get("color")),
+                    )
                 )
             )
         ):
@@ -214,10 +215,12 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
     for tag in task.get("labels"):
         if nt_tag_id := tags_mapping.get(tag.get("name")):
             nt_api_tag_assignments.post_tag_assignment(
-                models.TagAssignment(
-                    id=models.Id16ReadOnly(id16()),
-                    tag_id=models.Id16(nt_tag_id),
-                    task_id=models.Id16(nt_task_id),
+                strip_readonly(
+                    models.TagAssignment(
+                        id=models.Id16ReadOnly(id16()),
+                        tag_id=models.Id16(nt_tag_id),
+                        task_id=models.Id16(nt_task_id),
+                    )
                 )
             )
 
@@ -240,10 +243,9 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
     return mapping, nt_members.get(current_user_id)
 
 
-def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str, nt_members: tuple):
+def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str):
     """Import task-related comments"""
     nt_api_comments = apis.CommentsApi(nt_client)
-    members_dict, default_author_id = nt_members
     for comment in sorted(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
     ):
@@ -253,9 +255,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str,
                     id=models.Id16ReadOnly(id16()),
                     body=comment.get("text"),
                     task_id=models.Id16(nt_task_id),
-                    author_id=models.Id16ReadOnly(
-                        members_dict.get(comment.get("author_email")) or default_author_id
-                    ),
+                    author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
                     extra="",
                 )
@@ -265,4 +265,4 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str,
 
 def _map_color(trello_color: Optional[str]) -> models.Color:
     """Maps Trello color onto Nozbe Teams color"""
-    return models.Color(trello_color if trello_color in COLORS else random.choice(COLORS))
+    return models.Color(trello_color if trello_color in COLORS else random.choice(COLORS))  # nosec
