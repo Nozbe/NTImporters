@@ -2,18 +2,19 @@
 
 from typing import Optional
 
-import asana
-from asana.error import AsanaError
-from dateutil.parser import isoparse
-
 import openapi_client as nt
+from dateutil.parser import isoparse
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
+
+import asana
+from asana.error import AsanaError
 
 SPEC = {
     "code": "asana",  # codename / ID of importer
     "name": "Asana",  # name of application
     "url": "https://developers.asana.com/docs/asana",  # link to documentation / specs / API
+    "input_fields": ("nt_auth_token", "auth_token"),
 }
 
 FAKE_ID16 = 16 * "a"
@@ -44,11 +45,13 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[st
     if not auth_token:
         return "Missing 'auth_token'"
 
-    nt_client = nt.ApiClient(configuration=nt.Configuration(
-        host="https://api4.nozbe.com/v1/api",
-        api_key={"ApiKeyAuth": nt_auth_token},
-        access_token=nt_auth_token,
-    ))
+    nt_client = nt.ApiClient(
+        configuration=nt.Configuration(
+            host="https://api4.nozbe.com/v1/api",
+            api_key={"ApiKeyAuth": nt_auth_token},
+            access_token=nt_auth_token,
+        )
+    )
     asana_client = asana.Client.access_token(auth_token)
     try:
         _import_data(nt_client, asana_client, team_id)
@@ -109,8 +112,9 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                         models.Id16(nt_project_id),
                         models.Name(section_full.get("name")),
                         models.TimestampReadOnly(1),
-                        archived_at=
-                        models.TimestampNullable(1) if section_full.get("archived") else None,
+                        archived_at=models.TimestampNullable(1)
+                        if section_full.get("archived")
+                        else None,
                     )
                 )
                 if nt_section:
@@ -201,17 +205,17 @@ def _get_single_tasks_project_id(nt_client: nt.ApiClient, team_id: str) -> Optio
     """Returns NT Single Tasks's project ID"""
     params = {
         "header": {"Accept": "application/json"},
-        "query": [("team_id", team_id), ("is_single_actions", True)]
+        "query": [("team_id", team_id), ("is_single_actions", True)],
     }
     settings = apis.ProjectsApi(nt_client).get_projects_endpoint.settings
     st_projects = nt_client.call_api(
-        settings['endpoint_path'],
-        settings['http_method'],
+        settings["endpoint_path"],
+        settings["http_method"],
         None,
         params["query"],
-        params['header'],
-        response_type=settings['response_type'],
-        auth_settings=settings['auth'],
+        params["header"],
+        response_type=settings["response_type"],
+        auth_settings=settings["auth"],
         _check_type=True,
         _return_http_data_only=True,
         _preload_content=True,
