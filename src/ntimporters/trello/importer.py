@@ -1,5 +1,4 @@
 """Trello -> Nozbe Teams importer"""
-import concurrent.futures
 import random
 from typing import Optional, Tuple
 
@@ -92,13 +91,15 @@ def run_import(nt_auth_token: str, auth_token: str, app_key: str, team_id: str) 
             team_id,
         )
 
-    except OpenApiException as exc:
+    except (Exception, OpenApiException) as exc:
         return str(exc)
     return None
 
 
 def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
     """Import everything from Trello to Nozbe Teams"""
+    limits = nt_limits(nt_client, team_id)
+    projects_api = apis.ProjectsApi(nt_client)
 
     def _import_project(project: dict):
         """Import trello project"""
@@ -116,28 +117,36 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             is_open=True,
             extra="",
         )
-        nt_project = apis.ProjectsApi(nt_client).post_project(strip_readonly(project_model)) or {}
+        nt_project = projects_api.post_project(strip_readonly(project_model)) or {}
 
         if not (nt_project_id := str(nt_project.get("id"))):
-            return
+            raise Exception("creating project failed")
 
-        _import_project_sections(
-            nt_client, trello_client, nt_project_id, project, nt_members_by_email(nt_client)
-        )
+        if error := _import_project_sections(
+            nt_client, trello_client, nt_project_id, project, nt_members_by_email(nt_client), limits
+        ):
+            raise Exception(error)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        executor.map(_import_project, trello_client.projects())
-    # for project in trello_client.projects():
-    #     _import_project(project)
+    nt_projects = [elt.get("id") for elt in projects_api.get_projects() if elt.is_open]
+    if len(trello_projects := trello_client.projects()) + len(nt_projects) > 1000 > 0:
+        raise Exception("LIMIT projects")
+    for project in trello_projects:
+        if error := _import_project(project):
+            raise Exception(error)
 
 
 def _import_project_sections(
-    nt_client, trello_client, nt_project_id: str, project: dict, nt_members: tuple[dict, str]
+    nt_client,
+    trello_client,
+    nt_project_id: str,
+    project: dict,
+    nt_members: tuple[dict, str],
+    limits: dict,
 ):
     """Import trello lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
-    tags_mapping = _import_tags_per_project(nt_client, trello_client, project)
+    tags_mapping = _import_tags_per_project(nt_client, trello_client, project, limits)
 
     def _parse_timestamp(trello_timestamp: Optional[str]) -> Optional[models.TimestampNullable]:
         """Parses Trello timestamp into NT timestamp format"""
@@ -146,7 +155,13 @@ def _import_project_sections(
         return models.TimestampNullable(int(isoparse(trello_timestamp).timestamp() * 1000))
 
     # import project sections
-    for section in trello_client.sections(project.get("id")):
+    if (
+        len(trello_sections := trello_client.sections(project.get("id")))
+        > limits.get("project_sections", 0)
+        > 0
+    ):
+        raise Exception("LIMIT project sections")
+    for section in trello_sections:
         if nt_section := nt_api_sections.post_project_section(
             strip_readonly(
                 models.ProjectSection(
@@ -187,13 +202,19 @@ def _import_project_sections(
                     # TODO import attachments, reminders?
 
 
-def _import_tags_per_project(nt_client, trello_client, project: dict) -> dict:
+def _import_tags_per_project(nt_client, trello_client, project: dict, limits: dict) -> dict:
     """Import trello tags and return name -> NT tag id mapping"""
     nt_api_tags = apis.TagsApi(nt_client)
     nt_tags = {
         str(elt.get("name")): str(elt.get("id")) for elt in nt_api_tags.get_tags(fields="id,name")
     }
-    for tag in trello_client.tags(project.get("id")):
+    if (
+        len(trello_tags := trello_client.tags(project.get("id"))) + len(nt_tags)
+        > limits.get("tags")
+        > -1
+    ):
+        raise Exception("LIMIT tags")
+    for tag in trello_tags:
         if (tag_name := tag.get("name")) not in nt_tags and (
             nt_tag := nt_api_tags.post_tag(
                 strip_readonly(
@@ -266,3 +287,49 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str)
 def _map_color(trello_color: Optional[str]) -> models.Color:
     """Maps Trello color onto Nozbe Teams color"""
     return models.Color(trello_color if trello_color in COLORS else random.choice(COLORS))  # nosec
+
+
+def nt_limits(nt_client, team_id: str):
+    """Check Nozbe Teams limits"""
+    if (team := apis.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
+        return json.loads(team.limits)
+    return {}
+
+
+# def _import_members(nt_client, trello_client, team_id: str, limits: dict):
+#     """ Invite Trello members to Nozbe """
+#     nt_team_members = apis.TeamMembersApi(nt_client)
+#     current_members_len = len(
+#         [
+#             elt.get("id")
+#             for elt in nt_team_members.get_team_members()
+#             if elt.get("status") == "active"
+#         ]
+#     )
+#
+#     if (
+#         len(emails_to_invite := trello_client.members_emails()) + current_members_len
+#         > limits.get("team_members", 0)
+#         > 0
+#     ):
+#         raise Exception("LIMIT team members")
+#     for email in emails_to_invite:
+#         print("inviting", email)
+#         user_model = models.User(
+#             id=models.Id16ReadOnly(id16()),
+#             invitation_email=email,
+#             name=models.Name(email),
+#             color="avatarColor1",
+#             is_placeholder=True,
+#         )
+#         if nt_user := apis.UsersApi(nt_client).post_user(strip_readonly(user_model)):
+#             team_member_model = models.TeamMember(
+#                 id=models.Id16ReadOnly(id16()),
+#                 team_id=models.Id16(team_id),
+#                 user_id=models.Id16(str(nt_user.id)),
+#                 role="member",
+#                 status="pending",
+#             )
+#             nt_member = apis.TeamMembersApi(nt_client).post_team_member(
+#                 strip_readonly(team_member_model)
+#             )
