@@ -68,6 +68,18 @@ class TrelloClient:
         """Get member by id"""
         return self._req(f"members/{member_id}")
 
+    def members_emails(self) -> set:
+        """Return all emails related with boards"""
+        members_emails = []
+        for board_id in self.boards_ids:
+            for member in self._req(f"boards/{board_id}/members"):
+                if (email := self.member(member.get("id")).get("email")) != self.user().get(
+                    "email"
+                ):
+                    members_emails.append(email)
+
+        return set(members_emails)
+
     def attachment(self, attachment_url: str):
         """Get attachment body"""
         if resp := requests.get(attachment_url, stream=True, headers=self.headers):
