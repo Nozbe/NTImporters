@@ -88,7 +88,7 @@ def run_import(nt_auth_token: str, auth_token: str, app_key: str, team_id: str) 
         _import_data(
             nt.ApiClient(
                 configuration=nt.Configuration(
-                    host="http://api4.nozbe.com/v1/api",
+                    host="https://api4.nozbe.com/v1/api",
                     api_key={"ApiKeyAuth": nt_auth_token},
                 )
             ),
