@@ -16,7 +16,7 @@ SPEC = {
     "code": "monday",  # codename / ID of importer
     "name": "Monday",  # name of application
     "url": "https://api.developer.monday.com/docs",
-    "input_fields": ("nt_auth_token", "app_key"),
+    "input_fields": ("team_id", "nt_auth_token", "app_key"),
 }
 
 
