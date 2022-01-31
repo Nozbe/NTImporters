@@ -58,20 +58,25 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
 
     def _import_project(project: dict):
         """Import todoist project"""
-        project_model = models.Project(
-            id=models.Id16ReadOnly(id16()),
-            name=models.NameAllowEmpty(project.name),
-            team_id=models.Id16(team_id),
-            author_id=models.Id16ReadOnly(id16()),
-            created_at=models.TimestampReadOnly(1),
-            last_event_at=models.TimestampReadOnly(1),
-            is_favorite=project.favorite,
-            sidebar_position=None if not project.favorite else 1.0,
-            is_open=project.shared,
-            extra="",
-        )
-        nt_project = nt_project_api.post_project(strip_readonly(project_model)) or {}
-
+        if project.name != "Inbox":
+            project_model = models.Project(
+                id=models.Id16ReadOnly(id16()),
+                name=models.NameAllowEmpty(project.name),
+                team_id=models.Id16(team_id),
+                author_id=models.Id16ReadOnly(id16()),
+                created_at=models.TimestampReadOnly(1),
+                last_event_at=models.TimestampReadOnly(1),
+                is_favorite=project.favorite,
+                sidebar_position=None if not project.favorite else 1.0,
+                is_open=project.shared,
+                extra="",
+            )
+            nt_project = nt_project_api.post_project(strip_readonly(project_model)) or {}
+        else:
+            for nt_project in nt_project_api.get_projects():
+                if nt_project.is_single_actions:
+                    nt_project_id = str(nt_project.id)
+                    break
         if not (nt_project_id := str(nt_project.get("id"))):
             return
 
@@ -131,19 +136,20 @@ def _import_project_sections(
 
     # import project sections
     mapping = {}
-    for section in todoist_client.get_sections(project_id=project.id):
-        if nt_section := nt_api_sections.post_project_section(
-            strip_readonly(
-                models.ProjectSection(
-                    models.Id16ReadOnly(id16()),
-                    models.Id16(nt_project_id),
-                    models.Name(section.name),
-                    models.TimestampReadOnly(1),
-                    position=float(section.order),
+    if project.name != "Inbox":
+        for section in todoist_client.get_sections(project_id=project.id):
+            if nt_section := nt_api_sections.post_project_section(
+                strip_readonly(
+                    models.ProjectSection(
+                        models.Id16ReadOnly(id16()),
+                        models.Id16(nt_project_id),
+                        models.Name(section.name),
+                        models.TimestampReadOnly(1),
+                        position=float(section.order),
+                    )
                 )
-            )
-        ):
-            mapping[section.id] = str(nt_section.get("id"))
+            ):
+                mapping[section.id] = str(nt_section.get("id"))
     _import_tasks(
         nt_client,
         todoist_client,
