@@ -220,7 +220,7 @@ def _import_tasks(
                 )
             )
         ):
-            _import_comments(nt_client, todoist_client, str(nt_task.id), task.get("id"))
+            _import_comments(nt_client, todoist_client, str(nt_task.id), task)
             _import_tags_assignments(
                 nt_api_tag_assignments, str(nt_task.id), tags_mapping, task.get("label_ids") or []
             )
@@ -298,13 +298,17 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
     return mapping, nt_members.get(current_user_id)
 
 
-def _import_comments(nt_client, todoist_client, nt_task_id: str, tr_task_id: str):
+def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict):
     """Import task-related comments"""
     nt_api_comments = apis.CommentsApi(nt_client)
-    for comment in sorted(
-        todoist_client.get_comments(task_id=tr_task_id),
+
+    comments = sorted(
+        todoist_client.get_comments(task_id=task.get("id")),
         key=lambda elt: isoparse(elt.posted).timestamp(),
-    ):
+    )
+    if task.get("description"):
+        comments.insert(0, Comment(id=1, content=task.get("description"), posted="0", task_id=1))
+    for comment in comments:
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
