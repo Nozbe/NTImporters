@@ -1,16 +1,12 @@
 """Monday -> Nozbe Teams importer"""
-import json
-from typing import Optional, Tuple
+from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.monday.monday_api import MondayClient
+from ntimporters.utils import ImportException, check_limits, id16, nt_limits, strip_readonly
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
-from openapi_client.model.id16_read_only import Id16ReadOnly
-from openapi_client.model.id16_read_only_nullable import Id16ReadOnlyNullable
-from openapi_client.model.timestamp_read_only import TimestampReadOnly
-from openapi_client.model_utils import ModelNormal
 
 SPEC = {
     "code": "monday",  # codename / ID of importer
@@ -18,27 +14,6 @@ SPEC = {
     "url": "https://api.developer.monday.com/docs",
     "input_fields": ("team_id", "nt_auth_token", "app_key"),
 }
-
-
-class ImportException(Exception):
-    """Import exception"""
-
-
-def strip_readonly(model: ModelNormal):
-    """Strip read only fields before sending to server"""
-    for field in [
-        elt
-        for elt in model.attribute_map.values()
-        if hasattr(model, elt)
-        and isinstance(getattr(model, elt), (Id16ReadOnly, Id16ReadOnlyNullable, TimestampReadOnly))
-    ]:
-        del model.__dict__.get("_data_store")[field]
-    return model
-
-
-def id16():
-    """Generate random string"""
-    return 16 * "a"
 
 
 # main method called by Nozbe Teams app
@@ -53,7 +28,6 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[str]:
         _import_data(
             nt.ApiClient(
                 configuration=nt.Configuration(
-                    # host="http://localhost:8888/v1/api",
                     host="https://api4.nozbe.com/v1/api",
                     api_key={"ApiKeyAuth": nt_auth_token},
                 )
@@ -70,7 +44,6 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[str]:
 def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
     """Import everything from monday to Nozbe Teams"""
     limits = nt_limits(nt_client, team_id)
-    print(f"{limits=}")
     projects_api = apis.ProjectsApi(nt_client)
 
     def _import_project(project: dict):
@@ -93,25 +66,29 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         if not (nt_project_id := str(nt_project.get("id"))):
             return
 
-        _import_project_sections(
-            nt_client, monday_client, nt_project_id, project, nt_members_by_email(nt_client), limits
-        )
+        _import_project_sections(nt_client, monday_client, nt_project_id, project, limits)
 
-    nt_projects = [elt.get("id") for elt in projects_api.get_projects() if elt.is_open]
     monday_projects = monday_client.projects()
     monday_projects_open = [
         elt.get("id") for elt in monday_projects if elt.get("board_kind") == "public"
     ]
-    if len(monday_projects_open) + len(nt_projects) > limits.get("projects_open") > 0:
-        raise ImportException("LIMIT projects_open")
+    nt_projects = [
+        elt.get("id")
+        for elt in projects_api.get_projects()
+        if (elt.is_open and not hasattr(elt, "ended_at"))
+    ]
+    check_limits(
+        limits,
+        "projects_open",
+        len(monday_projects_open) + len(nt_projects),
+    )
+
     for project in monday_projects:
         _import_project(project)
 
 
 # pylint: disable=too-many-arguments
-def _import_project_sections(
-    nt_client, monday_client, nt_project_id, project, nt_members: tuple, limits: dict
-):
+def _import_project_sections(nt_client, monday_client, nt_project_id, project, limits: dict):
     """Import monday lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
 
@@ -121,13 +98,12 @@ def _import_project_sections(
             return None
         return models.TimestampNullable(int(isoparse(monday_timestamp).timestamp() * 1000))
 
+    check_limits(
+        limits,
+        "project_sections",
+        len(monday_sections := monday_client.sections(project.get("id"))),
+    )
     sections_mapping = {}
-    if (
-        len(monday_sections := monday_client.sections(project.get("id")))
-        > limits.get("project_sections", 0)
-        > 0
-    ):
-        raise ImportException("LIMIT project sections")
     for section in monday_sections:
         if nt_section := nt_api_sections.post_project_section(
             strip_readonly(
@@ -142,17 +118,13 @@ def _import_project_sections(
             )
         ):
             sections_mapping[section.get("id")] = str(nt_section.get("id"))
-    _import_tasks(
-        nt_members, nt_client, monday_client, sections_mapping, project.get("id"), nt_project_id
-    )
+    _import_tasks(nt_client, monday_client, sections_mapping, project.get("id"), nt_project_id)
 
 
-def _import_tasks(
-    nt_members: tuple, nt_client, monday_client, sections_mapping, m_project_id, nt_project_id
-):
+def _import_tasks(nt_client, monday_client, sections_mapping, m_project_id, nt_project_id):
     """Import tasks"""
     nt_api_tasks = apis.TasksApi(nt_client)
-    _, author_id = nt_members
+    author_id = current_nt_member(nt_client)
     for task in monday_client.tasks(m_project_id):
         due_at, responsible_id = task.get("due_at"), None
         if due_at:
@@ -180,6 +152,19 @@ def _import_tasks(
 # pylint: enable=too-many-arguments
 
 
+def current_nt_member(nt_client) -> Optional[str]:
+    """Map current NT member id"""
+    nt_members = {
+        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
+    }
+    current_user_id = None
+    for user in apis.UsersApi(nt_client).get_users():
+        if bool(user.is_me):
+            current_user_id = str(user.id)
+            break
+    return str(nt_members.get(current_user_id))
+
+
 def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str):
     """Import task-related comments"""
     nt_api_comments = apis.CommentsApi(nt_client)
@@ -187,7 +172,6 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str)
         monday_client.comments(tr_task_id),
         key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
     ):
-        # cannot create author_id read-only field
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
@@ -200,31 +184,6 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str)
                 )
             )
         )
-
-
-def nt_members_by_email(nt_client) -> Tuple[dict, str]:
-    """Map NT emails to member ids"""
-    nt_members = {
-        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
-    }
-    mapping = {}
-    current_user_id = None
-    for user in apis.UsersApi(nt_client).get_users():
-        if hasattr(user, "email"):
-            email = user.email
-        elif hasattr(user, "invitation_email"):
-            email = user.invitation_email
-        if bool(user.is_me):
-            current_user_id = str(user.id)
-        mapping[str(email)] = nt_members.get(str(user.id))
-    return mapping, nt_members.get(current_user_id)
-
-
-def nt_limits(nt_client, team_id: str):
-    """Check Nozbe Teams limits"""
-    if (team := apis.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
-        return json.loads(team.limits)
-    return {}
 
 
 # TODO import team members
