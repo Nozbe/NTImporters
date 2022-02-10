@@ -1,39 +1,20 @@
 """Trello -> Nozbe Teams importer"""
-import json
-import random
 from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
-from ntimporters.trello.trello_api import TrelloClient
+from ntimporters.utils import (
+    ImportException,
+    check_limits,
+    id16,
+    map_color,
+    nt_limits,
+    strip_readonly,
+)
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
-from openapi_client.model.id16_read_only import Id16ReadOnly
-from openapi_client.model.id16_read_only_nullable import Id16ReadOnlyNullable
-from openapi_client.model.timestamp_read_only import TimestampReadOnly
-from openapi_client.model_utils import ModelNormal
 
-
-class ImportException(Exception):
-    """Import exception"""
-
-
-def strip_readonly(model: ModelNormal):
-    """Strip read only fields before sending to server"""
-    for field in [
-        elt
-        for elt in model.attribute_map.values()
-        if hasattr(model, elt)
-        and isinstance(getattr(model, elt), (Id16ReadOnly, Id16ReadOnlyNullable, TimestampReadOnly))
-    ]:
-        del model.__dict__.get("_data_store")[field]
-    return model
-
-
-def id16():
-    """Generate random string"""
-    return 16 * "a"
-
+from ntimporters.trello.trello_api import TrelloClient
 
 SPEC = {
     "code": "trello",  # codename / ID of importer
@@ -83,7 +64,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
             last_event_at=models.TimestampReadOnly(1),
-            color=_map_color(project.get("backgroundTopColor")),
+            color=map_color(project.get("backgroundTopColor")),
             description=str(project.get("desc") or ""),
             is_favorite=project.get("is_fav"),
             sidebar_position=None if not project.get("is_fav") else 1.0,
@@ -104,13 +85,16 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             limits,
         )
 
-    nt_projects = [elt.get("id") for elt in projects_api.get_projects() if elt.is_open]
-    if (
-        len(trello_projects := trello_client.projects()) + len(nt_projects)
-        > limits.get("projects_open")
-        > -1
-    ):
-        raise ImportException("LIMIT projects")
+    nt_projects = [
+        elt.get("id")
+        for elt in projects_api.get_projects()
+        if (elt.is_open and not hasattr(elt, "ended_at"))
+    ]
+    check_limits(
+        limits,
+        "projects_open",
+        len(trello_projects := trello_client.projects()) + len(nt_projects),
+    )
     for project in trello_projects:
         try:
             _import_project(project)
@@ -139,12 +123,11 @@ def _import_project_sections(
         return models.TimestampNullable(int(isoparse(trello_timestamp).timestamp() * 1000))
 
     # import project sections
-    if (
-        len(trello_sections := trello_client.sections(project.get("id")))
-        > limits.get("project_sections", 0)
-        > -1
-    ):
-        raise ImportException("LIMIT project sections")
+    check_limits(
+        limits,
+        "project_sections",
+        len(trello_sections := trello_client.sections(project.get("id"))),
+    )
     for section in trello_sections:
         if nt_section := nt_api_sections.post_project_section(
             strip_readonly(
@@ -195,12 +178,9 @@ def _import_tags_per_project(nt_client, trello_client, project: dict, limits: di
     nt_tags = {
         str(elt.get("name")): str(elt.get("id")) for elt in nt_api_tags.get_tags(fields="id,name")
     }
-    if (
-        len(trello_tags := trello_client.tags(project.get("id"))) + len(nt_tags)
-        > limits.get("tags")
-        > -1
-    ):
-        raise ImportException("LIMIT tags")
+    check_limits(
+        limits, "tags", len(trello_tags := trello_client.tags(project.get("id"))) + len(nt_tags)
+    )
     for tag in trello_tags:
         if (tag_name := tag.get("name")) not in nt_tags and (
             nt_tag := nt_api_tags.post_tag(
@@ -208,7 +188,7 @@ def _import_tags_per_project(nt_client, trello_client, project: dict, limits: di
                     models.Tag(
                         models.Id16ReadOnly(id16()),
                         models.Name(tag_name),
-                        color=_map_color(tag.get("color")),
+                        color=map_color(tag.get("color")),
                     )
                 )
             )
@@ -266,19 +246,6 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str)
         )
 
 
-def _map_color(trello_color: Optional[str]) -> models.Color:
-    """Maps Trello color onto Nozbe Teams color"""
-    colors = models.Color.allowed_values.values()[0].values()
-    return models.Color(trello_color if trello_color in colors else random.choice(colors))  # nosec
-
-
-def nt_limits(nt_client, team_id: str):
-    """Check Nozbe Teams limits"""
-    if (team := apis.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
-        return json.loads(team.limits)
-    return {}
-
-
 # def _import_members(nt_client, trello_client, team_id: str, limits: dict):
 #     """ Invite Trello members to Nozbe """
 #     nt_team_members = apis.TeamMembersApi(nt_client)
@@ -290,12 +257,12 @@ def nt_limits(nt_client, team_id: str):
 #         ]
 #     )
 #
-#     if (
-#         len(emails_to_invite := trello_client.members_emails()) + current_members_len
-#         > limits.get("team_members", 0)
-#         > 0
-#     ):
-#         raise ImportException("LIMIT team members")
+# check_limits(
+#     limits,
+#     "team_members",
+#      len(emails_to_invite := trello_client.members_emails()) + current_members_len
+#
+# )
 #     for email in emails_to_invite:
 #         print("inviting", email)
 #         user_model = models.User(
