@@ -1,7 +1,7 @@
 """Trello -> Nozbe Teams importer"""
 import json
 import random
-from typing import Optional, Tuple
+from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
@@ -41,38 +41,6 @@ SPEC = {
     "url": "https://developer.atlassian.com/cloud/trello/guides/rest-api/api-introduction/",
     "input_fields": ("nt_auth_token", "auth_token", "app_key", "team_id"),
 }
-COLORS = [
-    "aquamarine",
-    "aubergine",
-    "blue",
-    "brown",
-    "burntsienna",
-    "darkgreen",
-    "deeppurple",
-    "dustpink",
-    "green",
-    "heather",
-    "indigo",
-    "karmin",
-    "lightblue",
-    "lightpink",
-    "mauve",
-    "midnight",
-    "navy",
-    "ocean",
-    "ocher",
-    "olive",
-    "orange",
-    "pink",
-    "purple",
-    "red",
-    "sand",
-    "stone",
-    "taupe",
-    "teal",
-    "ultramarine",
-]
-
 
 # main method called by Nozbe Teams app
 def run_import(nt_auth_token: str, auth_token: str, app_key: str, team_id: str) -> Optional[str]:
@@ -127,17 +95,27 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         if not (nt_project_id := str(nt_project.get("id"))):
             raise ImportException("creating project failed")
 
-        if error := _import_project_sections(
-            nt_client, trello_client, nt_project_id, project, nt_members_by_email(nt_client), limits
-        ):
-            raise ImportException(error)
+        _import_project_sections(
+            nt_client,
+            trello_client,
+            nt_project_id,
+            project,
+            current_nt_member(nt_client),
+            limits,
+        )
 
     nt_projects = [elt.get("id") for elt in projects_api.get_projects() if elt.is_open]
-    if len(trello_projects := trello_client.projects()) + len(nt_projects) > 1000 > 0:
+    if (
+        len(trello_projects := trello_client.projects()) + len(nt_projects)
+        > limits.get("projects_open")
+        > -1
+    ):
         raise ImportException("LIMIT projects")
     for project in trello_projects:
-        if error := _import_project(project):
-            raise ImportException(error)
+        try:
+            _import_project(project)
+        except ImportException as error:
+            print(error)
 
 
 # pylint: disable=too-many-arguments
@@ -146,7 +124,7 @@ def _import_project_sections(
     trello_client,
     nt_project_id: str,
     project: dict,
-    nt_members: tuple[dict, str],
+    nt_member_id: str,
     limits: dict,
 ):
     """Import trello lists as project sections"""
@@ -194,7 +172,7 @@ def _import_project_sections(
                             project_position=1.0,
                             due_at=_parse_timestamp(task.get("due")),
                             responsible_id=models.Id16Nullable(
-                                str(nt_members[1]) if task.get("due") else None
+                                nt_member_id if task.get("due") else None
                             ),
                             ended_at=None
                             if not task.get("dueComplete")
@@ -255,22 +233,17 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
             )
 
 
-def nt_members_by_email(nt_client) -> Tuple[dict, str]:
-    """Map NT emails to member ids"""
+def current_nt_member(nt_client) -> Optional[str]:
+    """Map current NT member id"""
     nt_members = {
         str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
     }
-    mapping = {}
     current_user_id = None
     for user in apis.UsersApi(nt_client).get_users():
-        if hasattr(user, "email"):
-            email = user.email
-        elif hasattr(user, "invitation_email"):
-            email = user.invitation_email
         if bool(user.is_me):
             current_user_id = str(user.id)
-        mapping[str(email)] = nt_members.get(str(user.id))
-    return mapping, nt_members.get(current_user_id)
+            break
+    return str(nt_members.get(current_user_id))
 
 
 def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str):
@@ -295,7 +268,8 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str)
 
 def _map_color(trello_color: Optional[str]) -> models.Color:
     """Maps Trello color onto Nozbe Teams color"""
-    return models.Color(trello_color if trello_color in COLORS else random.choice(COLORS))  # nosec
+    colors = models.Color.allowed_values.values()[0].values()
+    return models.Color(trello_color if trello_color in colors else random.choice(colors))  # nosec
 
 
 def nt_limits(nt_client, team_id: str):
