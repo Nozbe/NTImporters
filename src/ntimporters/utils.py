@@ -22,7 +22,7 @@ class ImportException(Exception):
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
     """ Raise an exception if limits exceeded """
-    if current_len > (limit := limits.get(limit_name, 0)) > 0:
+    if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
 
@@ -38,39 +38,6 @@ def strip_readonly(model: ModelNormal):
     return model
 
 
-COLORS = [
-    "aquamarine",
-    "aubergine",
-    "blue",
-    "brown",
-    "burntsienna",
-    "darkgreen",
-    "deeppurple",
-    "dustpink",
-    "green",
-    "heather",
-    "indigo",
-    "karmin",
-    "lightblue",
-    "lightpink",
-    "mauve",
-    "midnight",
-    "navy",
-    "ocean",
-    "ocher",
-    "olive",
-    "orange",
-    "pink",
-    "purple",
-    "red",
-    "sand",
-    "stone",
-    "taupe",
-    "teal",
-    "ultramarine",
-]
-
-
 def nt_limits(nt_client, team_id: str):
     """Check Nozbe Teams limits"""
     if (team := apis.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
@@ -80,4 +47,6 @@ def nt_limits(nt_client, team_id: str):
 
 def map_color(color: Optional[str]) -> Color:
     """Maps color onto Nozbe Teams color"""
-    return Color(color if color in COLORS else random.choice(COLORS))  # nosec
+    colors = list(list(Color.allowed_values.values())[0].values())
+    colors.remove("null")
+    return Color(color if color in colors else random.choice(colors))  # nosec
