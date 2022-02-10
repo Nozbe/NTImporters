@@ -1,5 +1,6 @@
 """todoist -> Nozbe Teams importer"""
 import functools
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import openapi_client as nt
@@ -95,7 +96,13 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
         limits,
         "projects_open",
         sum([True for elt in todoist_projects if elt.shared])
-        + sum([True for elt in nt_project_api.get_projects() if elt.get("is_open")]),
+        + sum(
+            [
+                True
+                for elt in nt_project_api.get_projects()
+                if elt.get("is_open") and not elt.get("ended_at")
+            ]
+        ),
     )
     _import_members(nt_client, todoist_client, todoist_projects, limits)
     for project in todoist_projects:
@@ -113,8 +120,8 @@ def _import_members(nt_client, todoist_client, todoist_projects: list, limits):
         uniq_emails.update(todoist_members(todoist_client, project.id).values())
     uniq_emails -= set(nt_members_by_email(nt_client)[0])
     print(f"would import {uniq_emails=}")
-    check_limits(limits, "team_members", active_nt_members + len(uniq_emails))
     # TODO needs change on NT backend
+    # check_limits(limits, "team_members", active_nt_members + len(uniq_emails))
     # for email in uniq_emails:
     #     if nt_user := apis.UsersApi(nt_client).post_user(user_model):
     #         user_id = nt_user.get("id")
@@ -304,6 +311,11 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
     return mapping, nt_members.get(current_user_id)
 
 
+@dataclass
+class Comment:
+    content: str
+
+
 def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict):
     """Import task-related comments"""
     nt_api_comments = apis.CommentsApi(nt_client)
@@ -313,7 +325,7 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict):
         key=lambda elt: isoparse(elt.posted).timestamp(),
     )
     if task.get("description"):
-        comments.insert(0, Comment(id=1, content=task.get("description"), posted="0", task_id=1))
+        comments.insert(0, Comment(content=task.get("description")))
     for comment in comments:
         nt_api_comments.post_comment(
             strip_readonly(
