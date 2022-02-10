@@ -1,13 +1,14 @@
 import pathlib
+
 from setuptools import setup
 
 HERE = pathlib.Path(__file__).parent
 README = (HERE / "README.md").read_text()
 
 setup(
-    name='ntimporters',
-    version='0.1',
-    description='Set of migrators to import data from 3rd party apps to Nozbe Teams',
+    name="ntimporters",
+    version="0.1",
+    description="Set of migrators to import data from 3rd party apps to Nozbe Teams",
     long_description=README,
     long_description_content_type="text/markdown",
     url="https://github.com/Nozbe/NTImporters",
@@ -17,5 +18,7 @@ setup(
     install_requires=[
         "python_dateutil",
         "asana",
-    ]
+        "todoist-api-python",
+        "todoist-python",
+    ],
 )
