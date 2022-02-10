@@ -1,2 +1,2 @@
 """ Trello -> NT importer """
-from ntimporters.trello.importer import SPEC, run_import
+from ntimporters.todoist.importer import SPEC, run_import
