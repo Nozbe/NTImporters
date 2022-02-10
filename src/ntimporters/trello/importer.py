@@ -142,7 +142,7 @@ def _import_project_sections(
     if (
         len(trello_sections := trello_client.sections(project.get("id")))
         > limits.get("project_sections", 0)
-        > 0
+        > -1
     ):
         raise ImportException("LIMIT project sections")
     for section in trello_sections:
