@@ -1,4 +1,4 @@
-"""todoist -> Nozbe Teams importer"""
+"""Todoist -> Nozbe Teams importer"""
 import functools
 from dataclasses import dataclass
 from typing import Optional, Tuple
