@@ -21,7 +21,7 @@ from todoist import TodoistAPI as TodoistAPISync
 
 SPEC = {
     "code": "todoist",  # codename / ID of importer
-    "name": "todoist",  # name of application
+    "name": "Todoist",  # name of application
     "url": "https://todoist.com/app/settings/integrations",
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
