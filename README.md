@@ -7,7 +7,7 @@
 List of supported APIs:
 
 - Asana - [API](https://developers.asana.com/docs/asana)
-- ...
+- Trello [API](https://developer.atlassian.com/cloud/trello/rest/api-group-actions/)
 
 Nozbe Teams API - https://nozbe.com/api
 
