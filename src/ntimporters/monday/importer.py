@@ -4,7 +4,14 @@ from typing import Optional
 import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.monday.monday_api import MondayClient
-from ntimporters.utils import ImportException, check_limits, id16, nt_limits, strip_readonly
+from ntimporters.utils import (
+    ImportException,
+    check_limits,
+    current_nt_member,
+    id16,
+    nt_limits,
+    strip_readonly,
+)
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
@@ -45,8 +52,9 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
     """Import everything from monday to Nozbe Teams"""
     limits = nt_limits(nt_client, team_id)
     projects_api = apis.ProjectsApi(nt_client)
+    curr_member = current_nt_member(nt_client)
 
-    def _import_project(project: dict):
+    def _import_project(project: dict, curr_member: str):
         """Import monday project"""
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
@@ -66,7 +74,9 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         if not (nt_project_id := str(nt_project.get("id"))):
             return
 
-        _import_project_sections(nt_client, monday_client, nt_project_id, project, limits)
+        _import_project_sections(
+            nt_client, monday_client, nt_project_id, project, limits, curr_member
+        )
 
     monday_projects = monday_client.projects()
     monday_projects_open = [
@@ -88,7 +98,9 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
 
 
 # pylint: disable=too-many-arguments
-def _import_project_sections(nt_client, monday_client, nt_project_id, project, limits: dict):
+def _import_project_sections(
+    nt_client, monday_client, nt_project_id, project, limits: dict, curr_member: str
+):
     """Import monday lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
 
@@ -118,13 +130,16 @@ def _import_project_sections(nt_client, monday_client, nt_project_id, project, l
             )
         ):
             sections_mapping[section.get("id")] = str(nt_section.get("id"))
-    _import_tasks(nt_client, monday_client, sections_mapping, project.get("id"), nt_project_id)
+    _import_tasks(
+        nt_client, monday_client, sections_mapping, project.get("id"), nt_project_id, curr_member
+    )
 
 
-def _import_tasks(nt_client, monday_client, sections_mapping, m_project_id, nt_project_id):
+def _import_tasks(
+    nt_client, monday_client, sections_mapping, m_project_id, nt_project_id, author_id
+):
     """Import tasks"""
     nt_api_tasks = apis.TasksApi(nt_client)
-    author_id = current_nt_member(nt_client)
     for task in monday_client.tasks(m_project_id):
         due_at, responsible_id = task.get("due_at"), None
         if due_at:
@@ -150,19 +165,6 @@ def _import_tasks(nt_client, monday_client, sections_mapping, m_project_id, nt_p
 
 
 # pylint: enable=too-many-arguments
-
-
-def current_nt_member(nt_client) -> Optional[str]:
-    """Map current NT member id"""
-    nt_members = {
-        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
-    }
-    current_user_id = None
-    for user in apis.UsersApi(nt_client).get_users():
-        if bool(user.is_me):
-            current_user_id = str(user.id)
-            break
-    return str(nt_members.get(current_user_id))
 
 
 def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str):

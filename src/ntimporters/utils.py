@@ -17,11 +17,11 @@ def id16():
 
 
 class ImportException(Exception):
-    """ Importer exception """
+    """Importer exception"""
 
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
-    """ Raise an exception if limits exceeded """
+    """Raise an exception if limits exceeded"""
     if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
@@ -50,3 +50,18 @@ def map_color(color: Optional[str]) -> Color:
     colors = list(list(Color.allowed_values.values())[0].values())
     colors.remove("null")
     return Color(color if color in colors else random.choice(colors))  # nosec
+
+
+def current_nt_member(nt_client) -> Optional[str]:
+    """Map current NT member id"""
+    # TODO test returning author
+    # return "author"
+    nt_members = {
+        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
+    }
+    current_user_id = None
+    for user in apis.UsersApi(nt_client).get_users():
+        if bool(user.is_me):
+            current_user_id = str(user.id)
+            break
+    return str(nt_members.get(current_user_id))
