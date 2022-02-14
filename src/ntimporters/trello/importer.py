@@ -81,7 +81,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             trello_client,
             nt_project_id,
             project,
-            curr_member
+            curr_member,
             limits,
         )
 
