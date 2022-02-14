@@ -3,6 +3,7 @@ from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
+from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
     ImportException,
     check_limits,
@@ -13,8 +14,6 @@ from ntimporters.utils import (
 )
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
-
-from ntimporters.trello.trello_api import TrelloClient
 
 SPEC = {
     "code": "trello",  # codename / ID of importer
@@ -54,8 +53,9 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
     """Import everything from Trello to Nozbe Teams"""
     limits = nt_limits(nt_client, team_id)
     projects_api = apis.ProjectsApi(nt_client)
+    curr_member = current_nt_member(nt_client)
 
-    def _import_project(project: dict):
+    def _import_project(project: dict, curr_member: str):
         """Import trello project"""
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
@@ -81,7 +81,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             trello_client,
             nt_project_id,
             project,
-            current_nt_member(nt_client),
+            curr_member
             limits,
         )
 
@@ -97,7 +97,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
     )
     for project in trello_projects:
         try:
-            _import_project(project)
+            _import_project(project, curr_member)
         except ImportException as error:
             print(error)
 
