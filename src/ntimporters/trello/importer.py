@@ -7,6 +7,7 @@ from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
     ImportException,
     check_limits,
+    current_nt_member,
     id16,
     map_color,
     nt_limits,
@@ -211,19 +212,6 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
                     )
                 )
             )
-
-
-def current_nt_member(nt_client) -> Optional[str]:
-    """Map current NT member id"""
-    nt_members = {
-        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
-    }
-    current_user_id = None
-    for user in apis.UsersApi(nt_client).get_users():
-        if bool(user.is_me):
-            current_user_id = str(user.id)
-            break
-    return str(nt_members.get(current_user_id))
 
 
 def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str):
