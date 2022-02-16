@@ -18,7 +18,7 @@ from openapi_client.exceptions import OpenApiException
 
 SPEC = {
     "code": "trello",  # codename / ID of importer
-    "name": "Trello",  # name of application
+    "name": "TRELLO",  # name of application
     "url": "https://developer.atlassian.com/cloud/trello/guides/rest-api/api-introduction/",
     "input_fields": ("nt_auth_token", "auth_token", "app_key", "team_id"),
 }
