@@ -4,6 +4,7 @@ from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
+from ntimporters.utils import get_single_tasks_project_id
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
@@ -136,7 +137,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             nt_client,
             asana_client,
             asana_client.tasks.find_all({"workspace": workspace["gid"], "assignee": me["gid"]}),
-            _get_single_tasks_project_id(nt_client, team_id),
+            get_single_tasks_project_id(nt_client, team_id),
             {},
             map_tag_id,
         )
@@ -199,28 +200,6 @@ def _import_tasks(
         # TODO import attachments
         # for attachment in asana_client.attachments.find_by_task(task["gid"]):
         #     pass
-
-
-def _get_single_tasks_project_id(nt_client: nt.ApiClient, team_id: str) -> Optional[str]:
-    """Returns NT Single Tasks's project ID"""
-    params = {
-        "header": {"Accept": "application/json"},
-        "query": [("team_id", team_id), ("is_single_actions", True)],
-    }
-    settings = apis.ProjectsApi(nt_client).get_projects_endpoint.settings
-    st_projects = nt_client.call_api(
-        settings["endpoint_path"],
-        settings["http_method"],
-        None,
-        params["query"],
-        params["header"],
-        response_type=settings["response_type"],
-        auth_settings=settings["auth"],
-        _check_type=True,
-        _return_http_data_only=True,
-        _preload_content=True,
-    )
-    return str(st_projects[0].get("id")) if st_projects and st_projects[0] else None
 
 
 def _parse_timestamp(asana_timestamp: Optional[str]) -> Optional[models.TimestampNullable]:

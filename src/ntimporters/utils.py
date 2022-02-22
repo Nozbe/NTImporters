@@ -17,11 +17,11 @@ def id16():
 
 
 class ImportException(Exception):
-    """ Importer exception """
+    """Importer exception"""
 
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
-    """ Raise an exception if limits exceeded """
+    """Raise an exception if limits exceeded"""
     if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
@@ -50,3 +50,25 @@ def map_color(color: Optional[str]) -> Color:
     colors = list(list(Color.allowed_values.values())[0].values())
     colors.remove("null")
     return Color(color if color in colors else random.choice(colors))  # nosec
+
+
+def get_single_tasks_project_id(nt_client: nt.ApiClient, team_id: str) -> Optional[str]:
+    """Returns NT Single Tasks's project ID"""
+    params = {
+        "header": {"Accept": "application/json"},
+        "query": [("team_id", team_id), ("is_single_actions", True)],
+    }
+    settings = apis.ProjectsApi(nt_client).get_projects_endpoint.settings
+    st_projects = nt_client.call_api(
+        settings["endpoint_path"],
+        settings["http_method"],
+        None,
+        params["query"],
+        params["header"],
+        response_type=settings["response_type"],
+        auth_settings=settings["auth"],
+        _check_type=True,
+        _return_http_data_only=True,
+        _preload_content=True,
+    )
+    return str(st_projects[0].get("id")) if st_projects and st_projects[0] else None

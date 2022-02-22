@@ -8,6 +8,7 @@ from dateutil.parser import isoparse
 from ntimporters.utils import (
     ImportException,
     check_limits,
+    get_single_tasks_project_id,
     id16,
     map_color,
     nt_limits,
@@ -56,6 +57,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
     """Import everything from todoist to Nozbe Teams"""
     limits = nt_limits(nt_client, team_id)
     nt_project_api = apis.ProjectsApi(nt_client)
+    single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
 
     def _import_project(project: dict):
         """Import todoist project"""
@@ -73,13 +75,10 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
                 extra="",
             )
             nt_project = nt_project_api.post_project(strip_readonly(project_model)) or {}
+            if not (nt_project_id := str(nt_project.get("id"))):
+                return
         else:
-            for nt_project in nt_project_api.get_projects():
-                if nt_project.is_single_actions:
-                    nt_project_id = str(nt_project.id)
-                    break
-        if not (nt_project_id := str(nt_project.get("id"))):
-            return
+            nt_project_id = single_tasks_id
 
         _import_project_sections(
             nt_client,
