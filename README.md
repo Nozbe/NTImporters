@@ -1,8 +1,8 @@
 # NTImporters
 
-**NTImporters** helps in importing data to [Nozbe Teams](https://nozbe.app) from other task-management / to-do apps.
+**NTImporters** helps in importing data to [Nozbe](https://nozbe.app) from other task-management / to-do apps.
 
-**NTImporters** uses publicly available APIs to transfer data between supported apps and [Nozbe Teams](https://nozbe.app).
+**NTImporters** uses publicly available APIs to transfer data between supported apps and [Nozbe](https://nozbe.app).
 
 List of supported APIs:
 
@@ -12,17 +12,17 @@ List of supported APIs:
 - Monday [API](https://developer.todoist.com/rest/v1/#overview)
 - ...
 
-Nozbe Teams API - https://nozbe.com/api
+Nozbe API - https://nozbe.com/api
 
 ## Usage
 
-**NTImporters** is used directly by the Nozbe Teams app.
+**NTImporters** is used directly by the Nozbe app.
 
 1. Sign up or log in at https://nozbe.app
 2. Go to `Settings -> Importers` and choose application to import data from
 3. Provide `Personal Access Token` / `API key` to your account registered in application selected in step 2.
 4. Import your data
-5. Enjoy Nozbe Teams!
+5. Enjoy Nozbe!
 
 Questions? Contact support: support@nozbe.com
 

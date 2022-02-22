@@ -1,4 +1,4 @@
-"""Trello -> Nozbe Teams importer"""
+"""Trello -> Nozbe importer"""
 from typing import Optional
 
 import openapi_client as nt
@@ -23,9 +23,9 @@ SPEC = {
     "input_fields": ("nt_auth_token", "auth_token", "app_key", "team_id"),
 }
 
-# main method called by Nozbe Teams app
+# main method called by Nozbe app
 def run_import(nt_auth_token: str, auth_token: str, app_key: str, team_id: str) -> Optional[str]:
-    """Perform import from Trello to Nozbe Teams"""
+    """Perform import from Trello to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
     if not auth_token:
@@ -51,7 +51,7 @@ def run_import(nt_auth_token: str, auth_token: str, app_key: str, team_id: str) 
 
 
 def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
-    """Import everything from Trello to Nozbe Teams"""
+    """Import everything from Trello to Nozbe"""
     limits = nt_limits(nt_client, team_id)
     projects_api = apis.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)

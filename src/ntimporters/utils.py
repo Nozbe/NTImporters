@@ -39,14 +39,14 @@ def strip_readonly(model: ModelNormal):
 
 
 def nt_limits(nt_client, team_id: str):
-    """Check Nozbe Teams limits"""
+    """Check Nozbe limits"""
     if (team := apis.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
         return json.loads(team.limits)
     return {}
 
 
 def map_color(color: Optional[str]) -> Color:
-    """Maps color onto Nozbe Teams color"""
+    """Maps color onto Nozbe color"""
     colors = list(list(Color.allowed_values.values())[0].values())
     colors.remove("null")
     return Color(color if color in colors else random.choice(colors))  # nosec

@@ -1,4 +1,4 @@
-"""Monday -> Nozbe Teams importer"""
+"""Monday -> Nozbe importer"""
 from typing import Optional
 
 import openapi_client as nt
@@ -23,9 +23,9 @@ SPEC = {
 }
 
 
-# main method called by Nozbe Teams app
+# main method called by Nozbe app
 def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[str]:
-    """Perform import from monday to Nozbe Teams"""
+    """Perform import from monday to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
     if not app_key:
@@ -49,7 +49,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[str]:
 
 
 def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
-    """Import everything from monday to Nozbe Teams"""
+    """Import everything from monday to Nozbe"""
     limits = nt_limits(nt_client, team_id)
     projects_api = apis.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)

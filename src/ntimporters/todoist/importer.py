@@ -1,4 +1,4 @@
-"""Todoist -> Nozbe Teams importer"""
+"""Todoist -> Nozbe importer"""
 import functools
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -27,9 +27,9 @@ SPEC = {
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 
-# main method called by Nozbe Teams app
+# main method called by Nozbe app
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[str]:
-    """Perform import from todoist to Nozbe Teams"""
+    """Perform import from todoist to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
     if not auth_token:
@@ -54,7 +54,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[st
 
 
 def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, team_id: str):
-    """Import everything from todoist to Nozbe Teams"""
+    """Import everything from todoist to Nozbe"""
     limits = nt_limits(nt_client, team_id)
     nt_project_api = apis.ProjectsApi(nt_client)
     single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
@@ -109,7 +109,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
 
 
 def _import_members(nt_client, todoist_client, todoist_projects: list, limits):
-    """Import members into Nozbe Teams"""
+    """Import members into Nozbe"""
     nt_team_members_api = apis.TeamMembersApi(nt_client)
     active_nt_members = sum(
         [True for elt in nt_team_members_api.get_team_members() if elt.get("status") == "active"]

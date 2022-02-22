@@ -1,4 +1,4 @@
-"""Asana -> Nozbe Teams importer"""
+"""Asana -> Nozbe importer"""
 
 from typing import Optional
 
@@ -38,9 +38,9 @@ COLOR_MAP = {
 }
 
 
-# main method called by Nozbe Teams app
+# main method called by Nozbe app
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[str]:
-    """Perform import from Asana to Nozbe Teams"""
+    """Perform import from Asana to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
     if not auth_token:
@@ -61,7 +61,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[st
 
 
 def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: str):
-    """Import everything from Asana to Nozbe Teams"""
+    """Import everything from Asana to Nozbe"""
     nt_api_tags = apis.TagsApi(nt_client)
     nt_api_projects = apis.ProjectsApi(nt_client)
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
@@ -151,7 +151,7 @@ def _import_tasks(
     map_section_id: dict,
     map_tag_id: dict,
 ):
-    """Import task from Asana to Nozbe Teams"""
+    """Import task from Asana to Nozbe"""
     nt_api_tasks = apis.TasksApi(nt_client)
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_comments = apis.CommentsApi(nt_client)
@@ -210,7 +210,7 @@ def _parse_timestamp(asana_timestamp: Optional[str]) -> Optional[models.Timestam
 
 
 def _map_color(asana_color: Optional[str]) -> Optional[models.Color]:
-    """Maps Asana color onto Nozbe Teams color"""
+    """Maps Asana color onto Nozbe color"""
     if not asana_color:
         return None
     return models.Color(COLOR_MAP.get(asana_color)) if asana_color in COLOR_MAP else None
