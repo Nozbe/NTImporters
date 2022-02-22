@@ -52,6 +52,28 @@ def map_color(color: Optional[str]) -> Color:
     return Color(color if color in colors else random.choice(colors))  # nosec
 
 
+def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
+    """Returns NT Single Tasks's project ID"""
+    params = {
+        "header": {"Accept": "application/json"},
+        "query": [("team_id", team_id), ("is_single_actions", True)],
+    }
+    settings = apis.ProjectsApi(nt_client).get_projects_endpoint.settings
+    st_projects = nt_client.call_api(
+        settings["endpoint_path"],
+        settings["http_method"],
+        None,
+        params["query"],
+        params["header"],
+        response_type=settings["response_type"],
+        auth_settings=settings["auth"],
+        _check_type=True,
+        _return_http_data_only=True,
+        _preload_content=True,
+    )
+    return str(st_projects[0].get("id")) if st_projects and st_projects[0] else None
+
+
 def current_nt_member(nt_client) -> Optional[str]:
     """Map current NT member id"""
     # TODO test returning author
