@@ -8,6 +8,7 @@ from ntimporters.utils import (
     ImportException,
     check_limits,
     current_nt_member,
+    get_projects_per_team,
     id16,
     nt_limits,
     strip_readonly,
@@ -82,15 +83,21 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
     monday_projects_open = [
         elt.get("id") for elt in monday_projects if elt.get("board_kind") == "public"
     ]
-    nt_projects = [
-        elt.get("id")
-        for elt in projects_api.get_projects()
-        if (elt.is_open and not hasattr(elt, "ended_at"))
-    ]
+    nt_projects = get_projects_per_team(nt_client, team_id)
     check_limits(
         limits,
         "projects_open",
-        len(monday_projects_open) + len(nt_projects),
+        len(monday_projects_open)
+        + sum(
+            [
+                True
+                for elt in nt_projects
+                if (
+                    elt.get("is_open")
+                    and (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at")))
+                )
+            ]
+        ),
     )
 
     for project in monday_projects:

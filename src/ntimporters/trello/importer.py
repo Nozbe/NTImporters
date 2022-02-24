@@ -8,6 +8,7 @@ from ntimporters.utils import (
     ImportException,
     check_limits,
     current_nt_member,
+    get_projects_per_team,
     id16,
     map_color,
     nt_limits,
@@ -86,15 +87,21 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             limits,
         )
 
-    nt_projects = [
-        elt.get("id")
-        for elt in projects_api.get_projects()
-        if (elt.is_open and not hasattr(elt, "ended_at"))
-    ]
+    nt_projects = get_projects_per_team(nt_client, team_id)
     check_limits(
         limits,
         "projects_open",
-        len(trello_projects := trello_client.projects()) + len(nt_projects),
+        len(trello_projects := trello_client.projects())
+        + sum(
+            [
+                True
+                for elt in nt_projects
+                if (
+                    elt.get("is_open")
+                    and (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at")))
+                )
+            ]
+        ),
     )
     for project in trello_projects:
         try:
