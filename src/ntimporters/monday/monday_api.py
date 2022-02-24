@@ -6,7 +6,7 @@ import requests
 
 
 class MondayClient:
-    """ Client to connect to Monday API """
+    """Client to connect to Monday API"""
 
     api_path = "https://api.monday.com/v2"
     limit = 300
@@ -22,11 +22,11 @@ class MondayClient:
         return {}
 
     def user(self) -> dict:
-        """ Get Monday's user email """
+        """Get Monday's user email"""
         return self._req("me{email}").get("data", {}).get("me", {})
 
     def projects(self) -> list[dict]:
-        """ Get Monday boards (NT projects) """
+        """Get Monday boards (NT projects)"""
         return (
             self._req(
                 f"boards(state:all limit:{self.limit}){{name,id,state,description,board_kind}}"
@@ -36,12 +36,12 @@ class MondayClient:
         )
 
     def sections(self, project_id: str) -> list:
-        """Get Monday groups (NT project sections) """
+        """Get Monday groups (NT project sections)"""
         query = f"boards (state:all ids: {project_id}) {{ groups {{ id title archived }} }}"
         return self._req(query).get("data", {}).get("boards", [{}])[0].get("groups", [])
 
     def tasks(self, project_id: str) -> list:
-        """ Get Monday items (NT tasks) """
+        """Get Monday items (NT tasks)"""
         query = f"""boards(state:all limit:{self.limit} ids:{project_id})
         {{
         items {{ state id group {{id}} name column_values {{ type value text title }} }}
@@ -75,14 +75,14 @@ class MondayClient:
         return tasks
 
     def comments(self, task_id: str) -> dict:
-        """ Get Monday updates (task's comments) """
+        """Get Monday updates (task's comments)"""
         query = f"""items (ids: {task_id}) {{
         updates(limit:{self.limit}) {{created_at, text_body, id, creator_id}}}}
         """
         return self._req(query).get("data", {}).get("items", [{}])[0].get("updates", [])
 
     def users(self) -> dict:
-        """ Get Monday users"""
+        """Get Monday users"""
         return {
             str(elt.get("id")): str(elt.get("email"))
             for elt in self._req("users {id email}").get("data", {}).get("users", [])

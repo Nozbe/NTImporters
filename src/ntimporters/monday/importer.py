@@ -94,7 +94,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
     )
 
     for project in monday_projects:
-        _import_project(project)
+        _import_project(project, curr_member)
 
 
 # pylint: disable=too-many-arguments
