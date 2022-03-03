@@ -52,6 +52,20 @@ def map_color(color: Optional[str]) -> Color:
     return Color(color if color in colors else random.choice(colors))  # nosec
 
 
+def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
+    """Get team-related projects"""
+    # temporary solution
+    nt_project_api = apis.ProjectsApi(nt_client)
+    return [
+        project
+        for project in nt_project_api.get_projects(
+            limit=10000,
+            fields="id,name,author_id,created_at,last_event_at,ended_at,team_id,is_open",
+        )
+        if str(project.team_id) == team_id
+    ]
+
+
 def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
     """Returns NT Single Tasks's project ID"""
     params = {

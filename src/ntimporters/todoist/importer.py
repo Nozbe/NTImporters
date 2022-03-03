@@ -8,6 +8,7 @@ from dateutil.parser import isoparse
 from ntimporters.utils import (
     ImportException,
     check_limits,
+    get_projects_per_team,
     get_single_tasks_project_id,
     id16,
     map_color,
@@ -71,10 +72,11 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
                 last_event_at=models.TimestampReadOnly(1),
                 is_favorite=project.favorite,
                 sidebar_position=None if not project.favorite else 1.0,
-                is_open=project.shared,
+                is_open=True,
                 extra="",
             )
             nt_project = nt_project_api.post_project(strip_readonly(project_model)) or {}
+
             if not (nt_project_id := str(nt_project.get("id"))):
                 return
         else:
@@ -91,15 +93,19 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
         )
 
     todoist_projects = todoist_client.get_projects()
+    nt_projects = get_projects_per_team(nt_client, team_id)
     check_limits(
         limits,
         "projects_open",
-        sum([True for elt in todoist_projects if elt.shared])
+        len(todoist_projects)
         + sum(
             [
                 True
-                for elt in nt_project_api.get_projects()
-                if elt.get("is_open") and not elt.get("ended_at")
+                for elt in nt_projects
+                if (
+                    elt.get("is_open")
+                    and (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at")))
+                )
             ]
         ),
     )
