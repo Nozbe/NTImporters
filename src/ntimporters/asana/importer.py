@@ -4,7 +4,7 @@ from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
-from ntimporters.utils import get_single_tasks_project_id
+from ntimporters.utils import get_single_tasks_project_id, strip_readonly
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
@@ -73,11 +73,13 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
         for tag in asana_client.tags.find_by_workspace(workspace["gid"]):
             tag_full = asana_client.tags.find_by_id(tag["gid"])
             nt_tag = nt_api_tags.post_tag(
-                models.Tag(
-                    models.Id16ReadOnly(FAKE_ID16),
-                    models.Name(tag_full.get("name")),
-                    team_id=models.Id16Nullable(team_id),
-                    color=_map_color(tag_full.get("color")),
+                strip_readonly(
+                    models.Tag(
+                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Name(tag_full.get("name")),
+                        team_id=models.Id16Nullable(team_id),
+                        color=_map_color(tag_full.get("color")),
+                    )
                 )
             )
             if nt_tag:
@@ -87,16 +89,20 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
         for project in asana_client.projects.find_by_workspace(workspace["gid"]):
             project_full = asana_client.projects.find_by_id(project["gid"])
             nt_project = nt_api_projects.post_project(
-                models.Project(
-                    models.Id16ReadOnly(FAKE_ID16),
-                    models.NameAllowEmpty(project_full.get("name")),
-                    models.Id16(team_id),
-                    models.Id16ReadOnly(FAKE_ID16),
-                    models.TimestampReadOnly(1),
-                    models.TimestampReadOnly(1),
-                    ended_at=models.TimestampNullable(1) if project_full.get("archived") else None,
-                    color=_map_color(project_full.get("color")),
-                    is_open=True,  # TODO set is_open based on 'public' and 'members' properties
+                strip_readonly(
+                    models.Project(
+                        models.Id16ReadOnly(FAKE_ID16),
+                        models.NameAllowEmpty(project_full.get("name")),
+                        models.Id16(team_id),
+                        models.Id16ReadOnly(FAKE_ID16),
+                        models.TimestampReadOnly(1),
+                        models.TimestampReadOnly(1),
+                        ended_at=models.TimestampNullable(1)
+                        if project_full.get("archived")
+                        else None,
+                        color=_map_color(project_full.get("color")),
+                        is_open=True,  # TODO set is_open based on 'public' and 'members' properties
+                    )
                 )
             )
             if not nt_project:
@@ -108,14 +114,16 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             for section in asana_client.sections.find_by_project(project["gid"]):
                 section_full = asana_client.sections.find_by_id(section["gid"])
                 nt_section = nt_api_sections.post_project_section(
-                    models.ProjectSection(
-                        models.Id16ReadOnly(FAKE_ID16),
-                        models.Id16(nt_project_id),
-                        models.Name(section_full.get("name")),
-                        models.TimestampReadOnly(1),
-                        archived_at=models.TimestampNullable(1)
-                        if section_full.get("archived")
-                        else None,
+                    strip_readonly(
+                        models.ProjectSection(
+                            models.Id16ReadOnly(FAKE_ID16),
+                            models.Id16(nt_project_id),
+                            models.Name(section_full.get("name")),
+                            models.TimestampReadOnly(1),
+                            archived_at=models.TimestampNullable(1)
+                            if section_full.get("archived")
+                            else None,
+                        )
                     )
                 )
                 if nt_section:
@@ -158,16 +166,18 @@ def _import_tasks(
     for task in asana_tasks:
         task_full = asana_client.tasks.find_by_id(task["gid"])
         nt_task = nt_api_tasks.post_task(
-            models.Task(
-                models.Id16ReadOnly(FAKE_ID16),
-                models.Name(task_full.get("name")),
-                models.ProjectId(nt_project_id),
-                models.Id16ReadOnly(FAKE_ID16),
-                models.TimestampReadOnly(1),
-                models.TimestampReadOnly(1),
-                project_section_id=_map_section_id(task_full, map_section_id),
-                due_at=_parse_timestamp(task_full.get("due_at")),
-                ended_at=_parse_timestamp(task_full.get("completed_at")),
+            strip_readonly(
+                models.Task(
+                    models.Id16ReadOnly(FAKE_ID16),
+                    models.Name(task_full.get("name")),
+                    models.ProjectId(nt_project_id),
+                    models.Id16ReadOnly(FAKE_ID16),
+                    models.TimestampReadOnly(1),
+                    models.TimestampReadOnly(1),
+                    project_section_id=_map_section_id(task_full, map_section_id),
+                    due_at=_parse_timestamp(task_full.get("due_at")),
+                    ended_at=_parse_timestamp(task_full.get("completed_at")),
+                )
             )
         )
         if not nt_task:
@@ -177,10 +187,12 @@ def _import_tasks(
         # import tag_assignments
         for tag in task_full.get("tags") or []:
             nt_api_tag_assignments.post_tag_assignment(
-                models.TagAssignment(
-                    models.Id16ReadOnly(FAKE_ID16),
-                    models.Id16(map_tag_id.get(tag["gid"])),
-                    models.Id16(nt_task_id),
+                strip_readonly(
+                    models.TagAssignment(
+                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16(map_tag_id.get(tag["gid"])),
+                        models.Id16(nt_task_id),
+                    )
                 )
             )
 
@@ -188,12 +200,14 @@ def _import_tasks(
         for story in asana_client.stories.find_by_task(task["gid"]):
             if story.get("type") == "comment":
                 nt_api_comments.post_comment(
-                    models.Comment(
-                        models.Id16ReadOnly(FAKE_ID16),
-                        story.get("text"),
-                        models.Id16(nt_task_id),
-                        models.Id16ReadOnly(FAKE_ID16),
-                        models.TimestampReadOnly(1),
+                    strip_readonly(
+                        models.Comment(
+                            models.Id16ReadOnly(FAKE_ID16),
+                            story.get("text"),
+                            models.Id16(nt_task_id),
+                            models.Id16ReadOnly(FAKE_ID16),
+                            models.TimestampReadOnly(1),
+                        )
                     )
                 )
 
