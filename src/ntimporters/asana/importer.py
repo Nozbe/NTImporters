@@ -14,7 +14,7 @@ from asana.error import AsanaError
 SPEC = {
     "code": "asana",  # codename / ID of importer
     "name": "Asana",  # name of application
-    "url": "https://developers.asana.com/docs/asana",  # link to documentation / specs / API
+    "url": "https://asana.com/guide/help/api/api",  # link to documentation / specs / API
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 
