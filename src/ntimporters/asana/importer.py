@@ -57,7 +57,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[st
     try:
         _import_data(nt_client, asana_client, team_id)
     except (AsanaError, OpenApiException) as exc:
-        return str(exc)
+        return exc
 
 
 def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: str):

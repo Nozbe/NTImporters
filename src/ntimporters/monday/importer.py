@@ -45,7 +45,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[str]:
         )
 
     except (ImportException, OpenApiException) as exc:
-        return str(exc)
+        return exc
     return None
 
 
