@@ -39,7 +39,7 @@ COLOR_MAP = {
 
 
 # main method called by Nozbe app
-def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[str]:
+def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Exception]:
     """Perform import from Asana to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"

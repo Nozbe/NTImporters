@@ -25,7 +25,7 @@ SPEC = {
 
 
 # main method called by Nozbe app
-def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[str]:
+def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Exception]:
     """Perform import from monday to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
