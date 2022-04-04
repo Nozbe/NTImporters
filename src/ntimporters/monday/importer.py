@@ -19,7 +19,7 @@ from openapi_client.exceptions import OpenApiException
 SPEC = {
     "code": "monday",  # codename / ID of importer
     "name": "Monday",  # name of application
-    "url": "https://api.developer.monday.com/docs/authentication",
+    "url": "https://nozbe.help/advancedfeatures/importers/#monday",
     "input_fields": ("team_id", "nt_auth_token", "app_key"),
 }
 
