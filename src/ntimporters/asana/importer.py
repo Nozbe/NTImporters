@@ -67,7 +67,6 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
 
     for workspace in asana_client.workspaces.find_all(full_payload=True):
-
         # import tags
         map_tag_id = {}
         for tag in asana_client.tags.find_by_workspace(workspace["gid"]):
@@ -113,6 +112,8 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             map_section_id = {}
             for section in asana_client.sections.find_by_project(project["gid"]):
                 section_full = asana_client.sections.find_by_id(section["gid"])
+                if section_full.get("name") == "Untitled section":
+                    continue
                 nt_section = nt_api_sections.post_project_section(
                     strip_readonly(
                         models.ProjectSection(
