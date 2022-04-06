@@ -76,7 +76,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                 strip_readonly(
                     models.Tag(
                         models.Id16ReadOnly(FAKE_ID16),
-                        models.Name(tag_full.get("name")),
+                        models.Name(tag_full.get("name", "")[:255]),
                         team_id=models.Id16Nullable(team_id),
                         color=_map_color(tag_full.get("color")),
                     )
@@ -92,7 +92,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                 strip_readonly(
                     models.Project(
                         models.Id16ReadOnly(FAKE_ID16),
-                        models.NameAllowEmpty(project_full.get("name")),
+                        models.NameAllowEmpty(project_full.get("name", "")[:255]),
                         models.Id16(team_id),
                         models.Id16ReadOnly(FAKE_ID16),
                         models.TimestampReadOnly(1),
@@ -118,7 +118,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                         models.ProjectSection(
                             models.Id16ReadOnly(FAKE_ID16),
                             models.Id16(nt_project_id),
-                            models.Name(section_full.get("name")),
+                            models.Name(section_full.get("name", "")[:255]),
                             models.TimestampReadOnly(1),
                             archived_at=models.TimestampNullable(1)
                             if section_full.get("archived")
@@ -169,7 +169,7 @@ def _import_tasks(
             strip_readonly(
                 models.Task(
                     models.Id16ReadOnly(FAKE_ID16),
-                    models.Name(task_full.get("name")),
+                    models.Name(task_full.get("name", "")[:255]),
                     models.ProjectId(nt_project_id),
                     models.Id16ReadOnly(FAKE_ID16),
                     models.TimestampReadOnly(1),

@@ -59,7 +59,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         """Import monday project"""
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
-            name=models.NameAllowEmpty(project.get("name")),
+            name=models.NameAllowEmpty(project.get("name", "")[:255]),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -129,7 +129,7 @@ def _import_project_sections(
                 models.ProjectSection(
                     models.Id16ReadOnly(id16()),
                     models.Id16(nt_project_id),
-                    models.Name(section.get("title")),
+                    models.Name(section.get("title", "")[:255]),
                     models.TimestampReadOnly(1),
                     archived_at=models.TimestampReadOnly(1) if section.get("archived") else None,
                     position=float(section.get("position") or 1.0),
@@ -156,7 +156,7 @@ def _import_tasks(
             strip_readonly(
                 models.Task(
                     id=models.Id16ReadOnly(id16()),
-                    name=models.Name(task.get("name")),
+                    name=models.Name(task.get("name", "")[:255]),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),

@@ -63,7 +63,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         """Import trello project"""
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
-            name=models.NameAllowEmpty(project.get("name")),
+            name=models.NameAllowEmpty(project.get("name", "")[:255]),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -144,7 +144,7 @@ def _import_project_sections(
                 models.ProjectSection(
                     models.Id16ReadOnly(id16()),
                     models.Id16(nt_project_id),
-                    models.Name(section.get("name")),
+                    models.Name(section.get("name", "")[:255]),
                     models.TimestampReadOnly(1),
                     archived_at=models.TimestampNullable(1) if section.get("closed") else None,
                     position=1.0,
@@ -156,7 +156,7 @@ def _import_project_sections(
                     strip_readonly(
                         models.Task(
                             id=models.Id16ReadOnly(id16()),
-                            name=models.Name(task.get("name")),
+                            name=models.Name(task.get("name", "")[:255]),
                             project_id=models.ProjectId(nt_project_id),
                             author_id=models.Id16ReadOnly(id16()),
                             created_at=models.TimestampReadOnly(1),
@@ -197,7 +197,7 @@ def _import_tags_per_project(nt_client, trello_client, project: dict, limits: di
                 strip_readonly(
                     models.Tag(
                         models.Id16ReadOnly(id16()),
-                        models.Name(tag_name),
+                        models.Name(tag_name[:255]),
                         color=map_color(tag.get("color")),
                     )
                 )
