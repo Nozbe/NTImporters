@@ -101,6 +101,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                         else None,
                         color=_map_color(project_full.get("color")),
                         is_open=True,  # TODO set is_open based on 'public' and 'members' properties
+                        sidebar_position=1.0,
                     )
                 )
             )

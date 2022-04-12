@@ -72,7 +72,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             color=map_color(project.get("backgroundTopColor")),
             description=str(project.get("desc") or ""),
             is_favorite=project.get("is_fav"),
-            sidebar_position=None if not project.get("is_fav") else 1.0,
+            sidebar_position=1.0,
             is_open=True,
             extra="",
         )

@@ -72,7 +72,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
                 created_at=models.TimestampReadOnly(1),
                 last_event_at=models.TimestampReadOnly(1),
                 is_favorite=project.favorite,
-                sidebar_position=None if not project.favorite else 1.0,
+                sidebar_position=1.0,
                 is_open=True,
                 extra="",
             )

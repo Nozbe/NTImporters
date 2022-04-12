@@ -68,6 +68,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
             ended_at=models.TimestampNullable(1)
             if project.get("state") in ("archived", "deleted")
             else None,
+            sidebar_position=1.0,
             description=project.get("description"),
             is_open=project.get("board_kind") == "public",
             extra="",
