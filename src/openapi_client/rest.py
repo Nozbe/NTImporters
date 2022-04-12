@@ -37,6 +37,7 @@ class RESTResponse(io.IOBase):
         self.status = resp.status
         self.reason = resp.reason
         self.data = resp.data
+        self.rate_limiting_tries = 0
 
     def getheaders(self):
         """Returns a dictionary of the response headers."""
@@ -241,7 +242,8 @@ class RESTClientObject(object):
             if r.status == 404:
                 raise NotFoundException(http_resp=r)
 
-            if r.status == 429:
+            if r.status == 429 and self.rate_limiting_tries <= 36:
+                self.rate_limiting_tries += 1
                 time.sleep(10)
                 return self.request(
                     method,
