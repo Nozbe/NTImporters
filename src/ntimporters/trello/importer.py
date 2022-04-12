@@ -110,7 +110,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         try:
             _import_project(project, curr_member)
         except ImportException as error:
-            print(error)
+            return error
 
 
 # pylint: disable=too-many-arguments
@@ -176,7 +176,7 @@ def _import_project_sections(
                     )
                 ):
                     _import_tags(nt_client, str(nt_task.id), task, tags_mapping)
-                    _import_comments(nt_client, trello_client, str(nt_task.id), task.get("id"))
+                    _import_comments(nt_client, trello_client, str(nt_task.id), task)
                     # TODO import attachments, reminders?
 
 
@@ -224,12 +224,15 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
             )
 
 
-def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str):
+def _import_comments(nt_client, trello_client, nt_task_id: str, task):
     """Import task-related comments"""
+    tr_task_id = task.get("id")
     nt_api_comments = apis.CommentsApi(nt_client)
-    for comment in sorted(
+    comments = [{"text": task.get("desc")}] if task.get("desc") else []
+    comments += sorted(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
-    ):
+    )
+    for comment in comments:
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
