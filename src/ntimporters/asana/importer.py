@@ -4,7 +4,7 @@ from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
-from ntimporters.utils import get_single_tasks_project_id, strip_readonly
+from ntimporters.utils import get_single_tasks_project_id, strip_readonly, trim
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
@@ -75,7 +75,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                 strip_readonly(
                     models.Tag(
                         models.Id16ReadOnly(FAKE_ID16),
-                        models.Name(tag_full.get("name", "")[:255]),
+                        models.Name(trim(tag_full.get("name", ""))),
                         team_id=models.Id16Nullable(team_id),
                         color=_map_color(tag_full.get("color")),
                     )
@@ -91,7 +91,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                 strip_readonly(
                     models.Project(
                         models.Id16ReadOnly(FAKE_ID16),
-                        models.NameAllowEmpty(project_full.get("name", "")[:255]),
+                        models.NameAllowEmpty(trim(project_full.get("name", ""))),
                         models.Id16(team_id),
                         models.Id16ReadOnly(FAKE_ID16),
                         models.TimestampReadOnly(1),
@@ -119,7 +119,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                         models.ProjectSection(
                             models.Id16ReadOnly(FAKE_ID16),
                             models.Id16(nt_project_id),
-                            models.Name(section_full.get("name", "")[:255]),
+                            models.Name(trim(section_full.get("name", ""))),
                             models.TimestampReadOnly(1),
                             archived_at=models.TimestampNullable(1)
                             if section_full.get("archived")
@@ -170,7 +170,7 @@ def _import_tasks(
             strip_readonly(
                 models.Task(
                     models.Id16ReadOnly(FAKE_ID16),
-                    models.Name(task_full.get("name", "")[:255]),
+                    models.Name(trim(task_full.get("name", ""))),
                     models.ProjectId(nt_project_id),
                     models.Id16ReadOnly(FAKE_ID16),
                     models.TimestampReadOnly(1),

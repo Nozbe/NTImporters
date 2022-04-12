@@ -101,3 +101,10 @@ def current_nt_member(nt_client) -> Optional[str]:
             current_user_id = str(user.id)
             break
     return str(nt_members.get(current_user_id))
+
+
+def trim(name: str):
+    """Return max 255 characters"""
+    if isinstance(name, str):
+        return name[:255]
+    return name

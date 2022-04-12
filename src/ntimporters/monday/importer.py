@@ -12,6 +12,7 @@ from ntimporters.utils import (
     id16,
     nt_limits,
     strip_readonly,
+    trim,
 )
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
@@ -59,7 +60,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         """Import monday project"""
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
-            name=models.NameAllowEmpty(project.get("name", "")[:255]),
+            name=models.NameAllowEmpty(trim(project.get("name", ""))),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -129,7 +130,7 @@ def _import_project_sections(
                 models.ProjectSection(
                     models.Id16ReadOnly(id16()),
                     models.Id16(nt_project_id),
-                    models.Name(section.get("title", "")[:255]),
+                    models.Name(trim(section.get("title", ""))),
                     models.TimestampReadOnly(1),
                     archived_at=models.TimestampReadOnly(1) if section.get("archived") else None,
                     position=float(section.get("position") or 1.0),
@@ -156,7 +157,7 @@ def _import_tasks(
             strip_readonly(
                 models.Task(
                     id=models.Id16ReadOnly(id16()),
-                    name=models.Name(task.get("name", "")[:255]),
+                    name=models.Name(trim(task.get("name", ""))),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
