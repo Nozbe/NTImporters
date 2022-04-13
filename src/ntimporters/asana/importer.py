@@ -4,7 +4,13 @@ from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
-from ntimporters.utils import get_single_tasks_project_id, strip_readonly, trim
+from ntimporters.utils import (
+    current_nt_member,
+    get_single_tasks_project_id,
+    parse_timestamp,
+    strip_readonly,
+    trim,
+)
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
@@ -65,6 +71,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
     nt_api_tags = apis.TagsApi(nt_client)
     nt_api_projects = apis.ProjectsApi(nt_client)
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
+    nt_member_id = current_nt_member(nt_client)
 
     for workspace in asana_client.workspaces.find_all(full_payload=True):
         # import tags
@@ -139,6 +146,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                 nt_project_id,
                 map_section_id,
                 map_tag_id,
+                nt_member_id,
             )
 
         # import loose tasks to Single Tasks project
@@ -150,6 +158,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             get_single_tasks_project_id(nt_client, team_id),
             {},
             map_tag_id,
+            nt_member_id,
         )
 
 
@@ -160,6 +169,7 @@ def _import_tasks(
     nt_project_id: str,
     map_section_id: dict,
     map_tag_id: dict,
+    nt_member_id: str,
 ):
     """Import task from Asana to Nozbe"""
     nt_api_tasks = apis.TasksApi(nt_client)
@@ -167,6 +177,9 @@ def _import_tasks(
     nt_api_comments = apis.CommentsApi(nt_client)
     for task in asana_tasks:
         task_full = asana_client.tasks.find_by_id(task["gid"])
+        due_at = parse_timestamp(task_full.get("due_at")) or parse_timestamp(
+            task_full.get("due_on")
+        )
         nt_task = nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -177,8 +190,12 @@ def _import_tasks(
                     models.TimestampReadOnly(1),
                     models.TimestampReadOnly(1),
                     project_section_id=_map_section_id(task_full, map_section_id),
-                    due_at=_parse_timestamp(task_full.get("due_at")),
-                    ended_at=_parse_timestamp(task_full.get("completed_at")),
+                    due_at=due_at,
+                    responsible_id=models.Id16Nullable(
+                        responsible_id=nt_member_id if due_at else None
+                    ),
+                    is_all_day=not task_full.get("due_at"),
+                    ended_at=parse_timestamp(task_full.get("completed_at")),
                 )
             )
         )
@@ -216,13 +233,6 @@ def _import_tasks(
         # TODO import attachments
         # for attachment in asana_client.attachments.find_by_task(task["gid"]):
         #     pass
-
-
-def _parse_timestamp(asana_timestamp: Optional[str]) -> Optional[models.TimestampNullable]:
-    """Parses Asana timestamp into NT timestamp format"""
-    if not asana_timestamp:
-        return None
-    return models.TimestampNullable(int(isoparse(asana_timestamp).timestamp() * 1000))
 
 
 def _map_color(asana_color: Optional[str]) -> Optional[models.Color]:

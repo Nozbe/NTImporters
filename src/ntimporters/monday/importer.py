@@ -113,12 +113,6 @@ def _import_project_sections(
     """Import monday lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
 
-    def _parse_timestamp(monday_timestamp: Optional[str]) -> Optional[models.TimestampNullable]:
-        """Parses monday timestamp into NT timestamp format"""
-        if not monday_timestamp:
-            return None
-        return models.TimestampNullable(int(isoparse(monday_timestamp).timestamp() * 1000))
-
     check_limits(
         limits,
         "project_sections",
@@ -166,6 +160,7 @@ def _import_tasks(
                     project_section_id=models.Id16Nullable(sections_mapping.get(task.get("group"))),
                     project_position=1.0,
                     due_at=due_at,
+                    is_all_day=task.get("is_all_day"),
                     responsible_id=models.Id16Nullable(responsible_id),
                 )
             )

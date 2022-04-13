@@ -117,6 +117,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
 
 def _import_members(nt_client, todoist_client, todoist_projects: list, limits):
     """Import members into Nozbe"""
+    return  # TODO
     nt_team_members_api = apis.TeamMembersApi(nt_client)
     active_nt_members = sum(
         [True for elt in nt_team_members_api.get_team_members() if elt.get("status") == "active"]
@@ -192,15 +193,21 @@ def _import_tasks(
     def _parse_timestamp(todoist_date) -> Optional[models.TimestampNullable]:
         """Parses todoist timestamp into NT timestamp format"""
         if isinstance(todoist_date, str):
-            return models.TimestampNullable(int(isoparse(todoist_date).timestamp() * 1000))
+            return (
+                models.TimestampNullable(int(isoparse(todoist_date).timestamp() * 1000)),
+                len(todoist_date) == 10,
+            )
 
         if not todoist_date or not any((todoist_date.get("date"), todoist_date.get("datetime"))):
-            return None
-        return models.TimestampNullable(
-            int(
-                isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp()
-                * 1000
-            )
+            return None, False
+        return (
+            models.TimestampNullable(
+                int(
+                    isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp()
+                    * 1000
+                )
+            ),
+            todoist_date.get("datetime", None) is None,
         )
 
     def _get_responsible_id(task):
@@ -220,6 +227,7 @@ def _import_tasks(
     for task in todoist_sync_client.completed.get_all(project_id=to_project_id).get("items", []) + [
         task.to_dict() for task in todoist_client.get_tasks(project_id=to_project_id)
     ]:
+        due_at, is_all_day = _parse_timestamp(task.get("due"))
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -233,9 +241,10 @@ def _import_tasks(
                         sections_mapping.get(task.get("section_id"))
                     ),
                     project_position=float(task.get("order") or 1),
-                    due_at=_parse_timestamp(task.get("due")),
+                    due_at=due_at,
+                    is_all_day=is_all_day,
                     responsible_id=_get_responsible_id(task),
-                    ended_at=_parse_timestamp(task.get("completed_date")),
+                    ended_at=_parse_timestamp(task.get("completed_date"))[0],
                 )
             )
         ):
