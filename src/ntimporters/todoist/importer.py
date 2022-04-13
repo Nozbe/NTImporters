@@ -14,6 +14,7 @@ from ntimporters.utils import (
     map_color,
     nt_limits,
     strip_readonly,
+    trim,
 )
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
@@ -65,13 +66,13 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
         if project.name != "Inbox":
             project_model = models.Project(
                 id=models.Id16ReadOnly(id16()),
-                name=models.NameAllowEmpty(project.name),
+                name=models.NameAllowEmpty(trim(project.name)),
                 team_id=models.Id16(team_id),
                 author_id=models.Id16ReadOnly(id16()),
                 created_at=models.TimestampReadOnly(1),
                 last_event_at=models.TimestampReadOnly(1),
                 is_favorite=project.favorite,
-                sidebar_position=None if not project.favorite else 1.0,
+                sidebar_position=1.0,
                 is_open=True,
                 extra="",
             )
@@ -155,7 +156,7 @@ def _import_project_sections(
                     models.ProjectSection(
                         models.Id16ReadOnly(id16()),
                         models.Id16(nt_project_id),
-                        models.Name(section.name),
+                        models.Name(trim(section.name)),
                         models.TimestampReadOnly(1),
                         position=float(section.order),
                     )
@@ -223,7 +224,7 @@ def _import_tasks(
             strip_readonly(
                 models.Task(
                     id=models.Id16ReadOnly(id16()),
-                    name=models.Name(task.get("content")),
+                    name=models.Name(trim(task.get("content", ""))),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
@@ -282,7 +283,7 @@ def _import_tags(nt_client, todoist_client, limits) -> dict:
                 strip_readonly(
                     models.Tag(
                         models.Id16ReadOnly(id16()),
-                        models.Name(tag_name),
+                        models.Name(trim(tag_name)),
                         color=map_color(str(tag.color)),  # TODO todoist color = some number
                         is_favorite=tag.favorite,
                     )

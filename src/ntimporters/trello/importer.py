@@ -13,6 +13,7 @@ from ntimporters.utils import (
     map_color,
     nt_limits,
     strip_readonly,
+    trim,
 )
 from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
@@ -63,7 +64,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         """Import trello project"""
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
-            name=models.NameAllowEmpty(project.get("name")),
+            name=models.NameAllowEmpty(trim(project.get("name", ""))),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -71,7 +72,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             color=map_color(project.get("backgroundTopColor")),
             description=str(project.get("desc") or ""),
             is_favorite=project.get("is_fav"),
-            sidebar_position=None if not project.get("is_fav") else 1.0,
+            sidebar_position=1.0,
             is_open=True,
             extra="",
         )
@@ -109,7 +110,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         try:
             _import_project(project, curr_member)
         except ImportException as error:
-            print(error)
+            return error
 
 
 # pylint: disable=too-many-arguments
@@ -144,7 +145,7 @@ def _import_project_sections(
                 models.ProjectSection(
                     models.Id16ReadOnly(id16()),
                     models.Id16(nt_project_id),
-                    models.Name(section.get("name")),
+                    models.Name(trim(section.get("name", ""))),
                     models.TimestampReadOnly(1),
                     archived_at=models.TimestampNullable(1) if section.get("closed") else None,
                     position=1.0,
@@ -156,7 +157,7 @@ def _import_project_sections(
                     strip_readonly(
                         models.Task(
                             id=models.Id16ReadOnly(id16()),
-                            name=models.Name(task.get("name")),
+                            name=models.Name(trim(task.get("name", ""))),
                             project_id=models.ProjectId(nt_project_id),
                             author_id=models.Id16ReadOnly(id16()),
                             created_at=models.TimestampReadOnly(1),
@@ -175,7 +176,7 @@ def _import_project_sections(
                     )
                 ):
                     _import_tags(nt_client, str(nt_task.id), task, tags_mapping)
-                    _import_comments(nt_client, trello_client, str(nt_task.id), task.get("id"))
+                    _import_comments(nt_client, trello_client, str(nt_task.id), task)
                     # TODO import attachments, reminders?
 
 
@@ -197,7 +198,7 @@ def _import_tags_per_project(nt_client, trello_client, project: dict, limits: di
                 strip_readonly(
                     models.Tag(
                         models.Id16ReadOnly(id16()),
-                        models.Name(tag_name),
+                        models.Name(trim(tag_name)),
                         color=map_color(tag.get("color")),
                     )
                 )
@@ -223,12 +224,15 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
             )
 
 
-def _import_comments(nt_client, trello_client, nt_task_id: str, tr_task_id: str):
+def _import_comments(nt_client, trello_client, nt_task_id: str, task):
     """Import task-related comments"""
+    tr_task_id = task.get("id")
     nt_api_comments = apis.CommentsApi(nt_client)
-    for comment in sorted(
+    comments = [{"text": task.get("desc")}] if task.get("desc") else []
+    comments += sorted(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
-    ):
+    )
+    for comment in comments:
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
