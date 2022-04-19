@@ -144,10 +144,6 @@ def _import_tasks(
     """Import tasks"""
     nt_api_tasks = apis.TasksApi(nt_client)
     for task in monday_client.tasks(m_project_id):
-        due_at, responsible_id = task.get("due_at"), None
-        if due_at:
-            due_at = models.TimestampNullable(due_at) if due_at else None
-            responsible_id = author_id
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -159,9 +155,9 @@ def _import_tasks(
                     last_activity_at=models.TimestampReadOnly(1),
                     project_section_id=models.Id16Nullable(sections_mapping.get(task.get("group"))),
                     project_position=1.0,
-                    due_at=due_at,
+                    due_at=task.get("due_at"),
                     is_all_day=task.get("is_all_day"),
-                    responsible_id=models.Id16Nullable(responsible_id),
+                    responsible_id=models.Id16Nullable(author_id if task.get("due_at") else None),
                 )
             )
         ):

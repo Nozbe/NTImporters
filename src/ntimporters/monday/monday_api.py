@@ -1,8 +1,8 @@
 """ Monday API client module """
 import json
-from datetime import datetime
 
 import requests
+from ntimporters.utils import parse_timestamp
 
 
 class MondayClient:
@@ -56,13 +56,8 @@ class MondayClient:
                     if (counter := counter + 1) > 1:
                         break
                     try:
-                        dateformat = "%Y-%m-%d %H:%M"
-                        if len(column.get("text", "")) == 10:
-                            task["is_all_day"], dateformat = True, "%Y-%m-%d"
-                        due_at = int(
-                            datetime.strptime(f"{column.get('text')}", dateformat).timestamp()
-                            * 1000
-                        )
+                        task["is_all_day"] = len(column.get("text", "")) == 10
+                        due_at = parse_timestamp(column.get("text"))
                     except (json.decoder.JSONDecodeError, ValueError):
                         pass
             task.pop("column_values", None)
