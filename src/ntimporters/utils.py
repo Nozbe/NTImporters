@@ -3,11 +3,9 @@ import json
 import random
 from typing import Optional
 
-from openapi_client import apis
+from dateutil.parser import isoparse
+from openapi_client import apis, models
 from openapi_client.model.color import Color
-from openapi_client.model.id16_read_only import Id16ReadOnly
-from openapi_client.model.id16_read_only_nullable import Id16ReadOnlyNullable
-from openapi_client.model.timestamp_read_only import TimestampReadOnly
 from openapi_client.model_utils import ModelNormal
 
 
@@ -32,7 +30,10 @@ def strip_readonly(model: ModelNormal):
         elt
         for elt in model.attribute_map.values()
         if hasattr(model, elt)
-        and isinstance(getattr(model, elt), (Id16ReadOnly, Id16ReadOnlyNullable, TimestampReadOnly))
+        and isinstance(
+            getattr(model, elt),
+            (models.Id16ReadOnly, models.Id16ReadOnlyNullable, models.TimestampReadOnly),
+        )
     ]:
         del model.__dict__.get("_data_store")[field]
     return model
@@ -108,3 +109,10 @@ def trim(name: str):
     if isinstance(name, str):
         return name[:255]
     return name
+
+
+def parse_timestamp(datetime: Optional[str]) -> Optional[models.TimestampNullable]:
+    """Parses date string into timestamp"""
+    if not datetime:
+        return None
+    return models.TimestampNullable(int(isoparse(datetime).timestamp() * 1000))

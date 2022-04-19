@@ -12,6 +12,7 @@ from ntimporters.utils import (
     id16,
     map_color,
     nt_limits,
+    parse_timestamp,
     strip_readonly,
     trim,
 )
@@ -111,6 +112,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
             _import_project(project, curr_member)
         except ImportException as error:
             return error
+    return None
 
 
 # pylint: disable=too-many-arguments
@@ -126,12 +128,6 @@ def _import_project_sections(
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
     tags_mapping = _import_tags_per_project(nt_client, trello_client, project, limits)
-
-    def _parse_timestamp(trello_timestamp: Optional[str]) -> Optional[models.TimestampNullable]:
-        """Parses Trello timestamp into NT timestamp format"""
-        if not trello_timestamp:
-            return None
-        return models.TimestampNullable(int(isoparse(trello_timestamp).timestamp() * 1000))
 
     # import project sections
     check_limits(
@@ -164,13 +160,14 @@ def _import_project_sections(
                             last_activity_at=models.TimestampReadOnly(1),
                             project_section_id=models.Id16Nullable(str(nt_section.id)),
                             project_position=1.0,
-                            due_at=_parse_timestamp(task.get("due")),
+                            due_at=parse_timestamp(task.get("due")),
                             responsible_id=models.Id16Nullable(
                                 nt_member_id if task.get("due") else None
                             ),
+                            is_all_day=False,  # trello due at has to be specified with time
                             ended_at=None
                             if not task.get("dueComplete")
-                            else _parse_timestamp(task.get("due")),
+                            else parse_timestamp(task.get("due")),
                             # there is no ended_at time @ trello
                         )
                     )

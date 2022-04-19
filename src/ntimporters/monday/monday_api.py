@@ -1,8 +1,8 @@
 """ Monday API client module """
 import json
-from datetime import datetime
 
 import requests
+from ntimporters.utils import parse_timestamp
 
 
 class MondayClient:
@@ -50,19 +50,15 @@ class MondayClient:
         tasks = []
         for task in self._req(query).get("data", {}).get("boards", [{}])[0].get("items", []):
             counter, due_at = 0, None
+            task["is_all_day"] = False
             for column in task.get("column_values"):
-                if column.get("type") == "date" and column.get("value"):
+                if column.get("type") == "date" and column.get("text"):
                     if (counter := counter + 1) > 1:
                         break
                     try:
-                        dtime = json.loads(column.get("value", "{}"))
-                        due_at = int(
-                            datetime.strptime(
-                                f"{dtime.get('date')} {dtime.get('time')}", "%Y-%m-%d %H:%M:%S"
-                            ).timestamp()
-                            * 1000
-                        )
-                    except (ValueError, json.decoder.JSONDecodeError):
+                        task["is_all_day"] = len(column.get("text", "")) == 10
+                        due_at = parse_timestamp(column.get("text"))
+                    except (json.decoder.JSONDecodeError, ValueError):
                         pass
             task.pop("column_values", None)
             tasks.append(

@@ -113,12 +113,6 @@ def _import_project_sections(
     """Import monday lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
 
-    def _parse_timestamp(monday_timestamp: Optional[str]) -> Optional[models.TimestampNullable]:
-        """Parses monday timestamp into NT timestamp format"""
-        if not monday_timestamp:
-            return None
-        return models.TimestampNullable(int(isoparse(monday_timestamp).timestamp() * 1000))
-
     check_limits(
         limits,
         "project_sections",
@@ -150,10 +144,6 @@ def _import_tasks(
     """Import tasks"""
     nt_api_tasks = apis.TasksApi(nt_client)
     for task in monday_client.tasks(m_project_id):
-        due_at, responsible_id = task.get("due_at"), None
-        if due_at:
-            due_at = models.TimestampNullable(due_at) if due_at else None
-            responsible_id = author_id
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -165,8 +155,9 @@ def _import_tasks(
                     last_activity_at=models.TimestampReadOnly(1),
                     project_section_id=models.Id16Nullable(sections_mapping.get(task.get("group"))),
                     project_position=1.0,
-                    due_at=due_at,
-                    responsible_id=models.Id16Nullable(responsible_id),
+                    due_at=task.get("due_at"),
+                    is_all_day=task.get("is_all_day"),
+                    responsible_id=models.Id16Nullable(author_id if task.get("due_at") else None),
                 )
             )
         ):
