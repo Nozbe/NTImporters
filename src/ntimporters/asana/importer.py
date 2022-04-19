@@ -5,6 +5,7 @@ from typing import Optional
 import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.utils import (
+    API_HOST,
     current_nt_member,
     get_single_tasks_project_id,
     parse_timestamp,
@@ -54,7 +55,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
 
     nt_client = nt.ApiClient(
         configuration=nt.Configuration(
-            host="https://api4.nozbe.com/v1/api",
+            host=API_HOST,
             api_key={"ApiKeyAuth": nt_auth_token},
             access_token=nt_auth_token,
         )
@@ -103,9 +104,9 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                         models.Id16ReadOnly(FAKE_ID16),
                         models.TimestampReadOnly(1),
                         models.TimestampReadOnly(1),
-                        ended_at=models.TimestampNullable(1)
-                        if project_full.get("archived")
-                        else None,
+                        ended_at=models.TimestampNullable(
+                            1 if project_full.get("archived") else None
+                        ),
                         color=_map_color(project_full.get("color")),
                         is_open=True,  # TODO set is_open based on 'public' and 'members' properties
                         sidebar_position=1.0,
@@ -118,7 +119,9 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
 
             # import project sections
             map_section_id = {}
-            for section in asana_client.sections.find_by_project(project["gid"]):
+            for position, section in enumerate(
+                asana_client.sections.find_by_project(project["gid"])
+            ):
                 section_full = asana_client.sections.find_by_id(section["gid"])
                 if section_full.get("name") == "Untitled section":
                     continue
@@ -132,6 +135,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                             archived_at=models.TimestampNullable(1)
                             if section_full.get("archived")
                             else None,
+                            position=float(position),
                         )
                     )
                 )
@@ -177,6 +181,7 @@ def _import_tasks(
     nt_api_comments = apis.CommentsApi(nt_client)
     for task in asana_tasks:
         task_full = asana_client.tasks.find_by_id(task["gid"])
+
         due_at = parse_timestamp(task_full.get("due_at")) or parse_timestamp(
             task_full.get("due_on")
         )
@@ -191,9 +196,7 @@ def _import_tasks(
                     models.TimestampReadOnly(1),
                     project_section_id=_map_section_id(task_full, map_section_id),
                     due_at=due_at,
-                    responsible_id=models.Id16Nullable(
-                        responsible_id=nt_member_id if due_at else None
-                    ),
+                    responsible_id=models.Id16Nullable(nt_member_id if due_at else None),
                     is_all_day=not task_full.get("due_at"),
                     ended_at=parse_timestamp(task_full.get("completed_at")),
                 )
@@ -216,6 +219,38 @@ def _import_tasks(
             )
 
         # import comments
+        if task_description := task_full.get("notes", ""):
+            nt_api_comments.post_comment(
+                strip_readonly(
+                    models.Comment(
+                        models.Id16ReadOnly(FAKE_ID16),
+                        task_description,
+                        models.Id16(nt_task_id),
+                        models.Id16ReadOnly(FAKE_ID16),
+                        models.TimestampReadOnly(1),
+                    )
+                )
+            )
+        checklist = []
+        for item in asana_client.tasks.get_subtasks_for_task(
+            task["gid"], opt_fields="name,completed"
+        ):
+            checked = "- [ ]" if not item.get("completed") else "- [x]"
+            checklist.append(f"{checked} {item.get('name')}")
+
+        if checklist:
+            nt_api_comments.post_comment(
+                strip_readonly(
+                    models.Comment(
+                        models.Id16ReadOnly(FAKE_ID16),
+                        "\n".join(checklist),
+                        models.Id16(nt_task_id),
+                        models.Id16ReadOnly(FAKE_ID16),
+                        models.TimestampReadOnly(1),
+                    )
+                )
+            )
+
         for story in asana_client.stories.find_by_task(task["gid"]):
             if story.get("type") == "comment":
                 nt_api_comments.post_comment(
