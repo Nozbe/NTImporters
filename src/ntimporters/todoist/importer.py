@@ -14,6 +14,7 @@ from ntimporters.utils import (
     id16,
     map_color,
     nt_limits,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -211,24 +212,26 @@ def _import_tasks(
             todoist_date.get("datetime", None) is None,
         )
 
-    def _get_responsible_id(task):
+    def _get_responsible_id(task: dict):
         """Get NT responsible_id given todoist assignee id"""
-        responsible_id = None
+        should_set_tag, responsible_id = False, None
         if task.get("assignee") and (
             collaborators := todoist_members(todoist_client, task.get("project_id"))
         ):
             if todoist_email := collaborators.get(task.get("assignee")):
                 responsible_id = nt_members[0].get(todoist_email)
-        elif task.get("due"):  # task with due set must be assign to someone
+        if not responsible_id and task.get("due"):
+            should_set_tag = True
             responsible_id = nt_members[1]
 
-        return models.Id16Nullable(responsible_id)
+        return should_set_tag, models.Id16Nullable(responsible_id)
 
     # get tasks and completed tasks, while completed tasks are fetched from sync api
     for task in todoist_sync_client.completed.get_all(project_id=to_project_id).get("items", []) + [
         task.to_dict() for task in todoist_client.get_tasks(project_id=to_project_id)
     ]:
         due_at, is_all_day = _parse_timestamp(task.get("due"))
+        should_set_tag, responsible_id = _get_responsible_id(task)
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -244,11 +247,13 @@ def _import_tasks(
                     project_position=float(task.get("order") or 1),
                     due_at=due_at,
                     is_all_day=is_all_day,
-                    responsible_id=_get_responsible_id(task),
+                    responsible_id=responsible_id,
                     ended_at=_parse_timestamp(task.get("completed_date"))[0],
                 )
             )
         ):
+            if should_set_tag:
+                set_unassigned_tag(nt_client, nt_task.id)
             _import_comments(nt_client, todoist_client, str(nt_task.id), task)
             _import_tags_assignments(
                 nt_api_tag_assignments, str(nt_task.id), tags_mapping, task.get("label_ids") or []

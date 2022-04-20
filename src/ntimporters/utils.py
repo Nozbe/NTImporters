@@ -9,7 +9,7 @@ from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
 API_HOST = "https://api4.nozbe.com/v1/api"
-#API_HOST = "http://localhost:8888/v1/api"
+# API_HOST = "http://localhost:8888/v1/api"
 
 
 def id16():
@@ -42,6 +42,37 @@ def strip_readonly(model: ModelNormal):
     return model
 
 
+def set_unassigned_tag(nt_client, task_id: str) -> Optional[str]:
+    """set 'missing responsability' tag"""
+    tag_name, tag_id = "missing responsibility", None
+    st_tags = _get_with_query(
+        nt_client, apis.TagsApi(nt_client).get_tags_endpoint, [("limit", "1"), ("name", tag_name)]
+    )
+    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else None
+    if not tag_id and (
+        tag := apis.TagsApi(nt_client).post_tag(
+            strip_readonly(
+                models.Tag(
+                    models.Id16ReadOnly(id16()),
+                    models.Name(tag_name),
+                    color=map_color(map_color(None)),
+                    is_favorite=False,
+                )
+            )
+        )
+    ):
+        tag_id = tag.get("id")
+    if tag_id:
+        assignment = strip_readonly(
+            models.TagAssignment(
+                id=models.Id16ReadOnly(id16()),
+                tag_id=models.Id16(str(tag_id)),
+                task_id=models.Id16(str(task_id)),
+            )
+        )
+        apis.TagAssignmentsApi(nt_client).post_tag_assignment(assignment)
+
+
 def nt_limits(nt_client, team_id: str):
     """Check Nozbe limits"""
     if (team := apis.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
@@ -70,24 +101,28 @@ def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
     ]
 
 
-def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
-    """Returns NT Single Tasks's project ID"""
-    params = {
-        "header": {"Accept": "application/json"},
-        "query": [("team_id", team_id), ("is_single_actions", True)],
-    }
-    settings = apis.ProjectsApi(nt_client).get_projects_endpoint.settings
-    st_projects = nt_client.call_api(
+def _get_with_query(nt_client, api, query: list):
+    settings = api.settings
+    return nt_client.call_api(
         settings["endpoint_path"],
         settings["http_method"],
         None,
-        params["query"],
-        params["header"],
+        query,
+        {"Accept": "application/json"},
         response_type=settings["response_type"],
         auth_settings=settings["auth"],
         _check_type=True,
         _return_http_data_only=True,
         _preload_content=True,
+    )
+
+
+def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
+    """Returns NT Single Tasks's project ID"""
+    st_projects = _get_with_query(
+        nt_client,
+        apis.ProjectsApi(nt_client).get_projects_endpoint,
+        [("team_id", team_id), ("is_single_actions", True)],
     )
     return str(st_projects[0].get("id")) if st_projects and st_projects[0] else None
 
