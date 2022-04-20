@@ -1,7 +1,8 @@
 """ Common helper functions """
+import functools
 import json
 import random
-from typing import Optional
+from typing import Optional, Tuple
 
 from dateutil.parser import isoparse
 from openapi_client import apis, models
@@ -23,6 +24,7 @@ class ImportException(Exception):
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
+    return
     if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
@@ -129,17 +131,28 @@ def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
 
 def current_nt_member(nt_client) -> Optional[str]:
     """Map current NT member id"""
-    # TODO test returning author
-    # return "author"
+    return nt_members_by_email(nt_client)[1]
+
+
+@functools.cache
+def nt_members_by_email(nt_client) -> Tuple[dict, str]:
+    """Map NT emails to member ids"""
     nt_members = {
         str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
     }
+    mapping = {}
     current_user_id = None
     for user in apis.UsersApi(nt_client).get_users():
+        if hasattr(user, "email") and user.email:
+            email = user.email
+        elif hasattr(user, "invitation_email") and user.invitation_email:
+            email = user.invitation_email
+        else:
+            continue
         if bool(user.is_me):
             current_user_id = str(user.id)
-            break
-    return str(nt_members.get(current_user_id))
+        mapping[str(email)] = nt_members.get(str(user.id))
+    return mapping, nt_members.get(current_user_id)
 
 
 def trim(name: str):

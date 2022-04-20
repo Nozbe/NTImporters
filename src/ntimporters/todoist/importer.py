@@ -14,6 +14,7 @@ from ntimporters.utils import (
     id16,
     map_color,
     nt_limits,
+    nt_members_by_email,
     set_unassigned_tag,
     strip_readonly,
     trim,
@@ -309,27 +310,6 @@ def _import_tags(nt_client, todoist_client, limits) -> dict:
         elif tag_name in nt_tags:
             mapping[str(tag.id)] = nt_tags.get(tag_name)
     return mapping
-
-
-@functools.cache
-def nt_members_by_email(nt_client) -> Tuple[dict, str]:
-    """Map NT emails to member ids"""
-    nt_members = {
-        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
-    }
-    mapping = {}
-    current_user_id = None
-    for user in apis.UsersApi(nt_client).get_users():
-        if hasattr(user, "email") and user.email:
-            email = user.email
-        elif hasattr(user, "invitation_email") and user.invitation_email:
-            email = user.invitation_email
-        else:
-            continue
-        if bool(user.is_me):
-            current_user_id = str(user.id)
-        mapping[str(email)] = nt_members.get(str(user.id))
-    return mapping, nt_members.get(current_user_id)
 
 
 @dataclass

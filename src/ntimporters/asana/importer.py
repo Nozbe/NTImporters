@@ -1,15 +1,16 @@
 """Asana -> Nozbe importer"""
-
+import functools
 from typing import Optional
 
 import openapi_client as nt
-from dateutil.parser import isoparse
 from ntimporters.utils import (
     API_HOST,
     current_nt_member,
     get_single_tasks_project_id,
     id16,
+    nt_members_by_email,
     parse_timestamp,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -166,6 +167,13 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
         )
 
 
+@functools.cache
+def _get_asana_email_by_gid(asana_client, gid):
+    if user := asana_client.users.get_user(gid, opt_fields="email"):
+        return user.get("email")
+    return None
+
+
 def _import_tasks(
     nt_client: nt.ApiClient,
     asana_client: asana.Client,
@@ -179,12 +187,27 @@ def _import_tasks(
     nt_api_tasks = apis.TasksApi(nt_client)
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_comments = apis.CommentsApi(nt_client)
+    nt_members, nt_member_id = nt_members_by_email(nt_client)
+
+    def _get_responsible_id(assignee: dict):
+        """Get Nozbe author_id given asana's user"""
+        if assignee and (gid := assignee.get("gid")):
+            if responsible_id := nt_members.get(_get_asana_email_by_gid(asana_client, gid)):
+                return responsible_id
+        return None
+
     for task in asana_tasks:
         task_full = asana_client.tasks.find_by_id(task["gid"])
 
         due_at = parse_timestamp(task_full.get("due_at")) or parse_timestamp(
             task_full.get("due_on")
         )
+        responsible_id, should_set_tag = nt_member_id, False
+        if found_responsible := _get_responsible_id(task_full.get("assignee")):
+            responsible_id = found_responsible
+        elif due_at:
+            should_set_tag = True
+
         nt_task = nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -196,7 +219,7 @@ def _import_tasks(
                     models.TimestampReadOnly(1),
                     project_section_id=_map_section_id(task_full, map_section_id),
                     due_at=due_at,
-                    responsible_id=models.Id16Nullable(nt_member_id if due_at else None),
+                    responsible_id=models.Id16Nullable(responsible_id),
                     is_all_day=not task_full.get("due_at"),
                     ended_at=parse_timestamp(task_full.get("completed_at")),
                 )
@@ -205,6 +228,8 @@ def _import_tasks(
         if not nt_task:
             continue
         nt_task_id = str(nt_task.get("id"))
+        if should_set_tag:
+            set_unassigned_tag(nt_client, nt_task_id)
 
         # import tag_assignments
         for tag in task_full.get("tags") or []:
