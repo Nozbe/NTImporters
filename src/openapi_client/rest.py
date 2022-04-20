@@ -37,7 +37,6 @@ class RESTResponse(io.IOBase):
         self.status = resp.status
         self.reason = resp.reason
         self.data = resp.data
-        self.rate_limiting_tries = 0
 
     def getheaders(self):
         """Returns a dictionary of the response headers."""
@@ -55,6 +54,7 @@ class RESTClientObject(object):
         # https://github.com/shazow/urllib3/blob/f9409436f83aeb79fbaf090181cd81b784f1b8ce/urllib3/connectionpool.py#L680  # noqa: E501
         # maxsize is the number of requests to host that are allowed in parallel  # noqa: E501
         # Custom SSL certificates and client certificates: http://urllib3.readthedocs.io/en/latest/advanced-usage.html  # noqa: E501
+        self.rate_limiting_tries = 0
 
         # cert_reqs
         if configuration.verify_ssl:
