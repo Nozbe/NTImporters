@@ -24,7 +24,6 @@ class ImportException(Exception):
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
-    return
     if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
