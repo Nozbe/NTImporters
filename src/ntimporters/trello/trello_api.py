@@ -3,6 +3,7 @@ import datetime
 import functools
 
 import requests
+from ntimporters.utils import ImportException
 
 # board -> project
 # list ->  section
@@ -28,8 +29,11 @@ class TrelloClient:
         if resp := requests.get(
             f"{self.api_path}/{suffix}", data=data or {"limit": 1000}, headers=self.headers
         ):
-            # TODO status
             return resp.json()
+        else:
+            raise ImportException(
+                f"Connection to trello failed ({resp.status_code}). Wrong credentials?"
+            )
         return {}
 
     def user(self) -> dict:

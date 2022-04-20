@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.utils import (
+    API_HOST,
     ImportException,
     check_limits,
     get_projects_per_team,
@@ -41,7 +42,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
         _import_data(
             nt.ApiClient(
                 configuration=nt.Configuration(
-                    host="https://api4.nozbe.com/v1/api",
+                    host=API_HOST,
                     api_key={"ApiKeyAuth": nt_auth_token},
                 )
             ),

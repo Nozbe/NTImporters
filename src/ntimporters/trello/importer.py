@@ -5,6 +5,7 @@ import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
+    API_HOST,
     ImportException,
     check_limits,
     current_nt_member,
@@ -42,7 +43,7 @@ def run_import(
         _import_data(
             nt.ApiClient(
                 configuration=nt.Configuration(
-                    host="https://api4.nozbe.com/v1/api",
+                    host=API_HOST,
                     api_key={"ApiKeyAuth": nt_auth_token},
                 )
             ),
