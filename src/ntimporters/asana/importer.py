@@ -1,14 +1,16 @@
 """Asana -> Nozbe importer"""
-
+import functools
 from typing import Optional
 
 import openapi_client as nt
-from dateutil.parser import isoparse
 from ntimporters.utils import (
     API_HOST,
     current_nt_member,
     get_single_tasks_project_id,
+    id16,
+    nt_members_by_email,
     parse_timestamp,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -25,7 +27,6 @@ SPEC = {
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 
-FAKE_ID16 = 16 * "a"
 COLOR_MAP = {
     "light-green": "green",
     "dark-green": "darkgreen",
@@ -82,7 +83,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             nt_tag = nt_api_tags.post_tag(
                 strip_readonly(
                     models.Tag(
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         models.Name(trim(tag_full.get("name", ""))),
                         team_id=models.Id16Nullable(team_id),
                         color=_map_color(tag_full.get("color")),
@@ -98,10 +99,10 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             nt_project = nt_api_projects.post_project(
                 strip_readonly(
                     models.Project(
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         models.NameAllowEmpty(trim(project_full.get("name", ""))),
                         models.Id16(team_id),
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         models.TimestampReadOnly(1),
                         models.TimestampReadOnly(1),
                         ended_at=models.TimestampNullable(
@@ -128,7 +129,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                 nt_section = nt_api_sections.post_project_section(
                     strip_readonly(
                         models.ProjectSection(
-                            models.Id16ReadOnly(FAKE_ID16),
+                            models.Id16ReadOnly(id16()),
                             models.Id16(nt_project_id),
                             models.Name(trim(section_full.get("name", ""))),
                             models.TimestampReadOnly(1),
@@ -166,6 +167,13 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
         )
 
 
+@functools.cache
+def _get_asana_email_by_gid(asana_client, gid):
+    if user := asana_client.users.get_user(gid, opt_fields="email"):
+        return user.get("email")
+    return None
+
+
 def _import_tasks(
     nt_client: nt.ApiClient,
     asana_client: asana.Client,
@@ -179,24 +187,39 @@ def _import_tasks(
     nt_api_tasks = apis.TasksApi(nt_client)
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_comments = apis.CommentsApi(nt_client)
+    nt_members, nt_member_id = nt_members_by_email(nt_client)
+
+    def _get_responsible_id(assignee: dict):
+        """Get Nozbe author_id given asana's user"""
+        if assignee and (gid := assignee.get("gid")):
+            if responsible_id := nt_members.get(_get_asana_email_by_gid(asana_client, gid)):
+                return responsible_id
+        return None
+
     for task in asana_tasks:
         task_full = asana_client.tasks.find_by_id(task["gid"])
 
         due_at = parse_timestamp(task_full.get("due_at")) or parse_timestamp(
             task_full.get("due_on")
         )
+        responsible_id, should_set_tag = nt_member_id, False
+        if found_responsible := _get_responsible_id(task_full.get("assignee")):
+            responsible_id = found_responsible
+        elif due_at:
+            should_set_tag = True
+
         nt_task = nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    models.Id16ReadOnly(FAKE_ID16),
+                    models.Id16ReadOnly(id16()),
                     models.Name(trim(task_full.get("name", ""))),
                     models.ProjectId(nt_project_id),
-                    models.Id16ReadOnly(FAKE_ID16),
+                    models.Id16ReadOnly(id16()),
                     models.TimestampReadOnly(1),
                     models.TimestampReadOnly(1),
                     project_section_id=_map_section_id(task_full, map_section_id),
                     due_at=due_at,
-                    responsible_id=models.Id16Nullable(nt_member_id if due_at else None),
+                    responsible_id=models.Id16Nullable(responsible_id),
                     is_all_day=not task_full.get("due_at"),
                     ended_at=parse_timestamp(task_full.get("completed_at")),
                 )
@@ -205,13 +228,15 @@ def _import_tasks(
         if not nt_task:
             continue
         nt_task_id = str(nt_task.get("id"))
+        if should_set_tag:
+            set_unassigned_tag(nt_client, nt_task_id)
 
         # import tag_assignments
         for tag in task_full.get("tags") or []:
             nt_api_tag_assignments.post_tag_assignment(
                 strip_readonly(
                     models.TagAssignment(
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         models.Id16(map_tag_id.get(tag["gid"])),
                         models.Id16(nt_task_id),
                     )
@@ -223,10 +248,10 @@ def _import_tasks(
             nt_api_comments.post_comment(
                 strip_readonly(
                     models.Comment(
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         task_description,
                         models.Id16(nt_task_id),
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         models.TimestampReadOnly(1),
                     )
                 )
@@ -242,10 +267,10 @@ def _import_tasks(
             nt_api_comments.post_comment(
                 strip_readonly(
                     models.Comment(
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         "\n".join(checklist),
                         models.Id16(nt_task_id),
-                        models.Id16ReadOnly(FAKE_ID16),
+                        models.Id16ReadOnly(id16()),
                         models.TimestampReadOnly(1),
                     )
                 )
@@ -256,10 +281,10 @@ def _import_tasks(
                 nt_api_comments.post_comment(
                     strip_readonly(
                         models.Comment(
-                            models.Id16ReadOnly(FAKE_ID16),
+                            models.Id16ReadOnly(id16()),
                             story.get("text"),
                             models.Id16(nt_task_id),
-                            models.Id16ReadOnly(FAKE_ID16),
+                            models.Id16ReadOnly(id16()),
                             models.TimestampReadOnly(1),
                         )
                     )

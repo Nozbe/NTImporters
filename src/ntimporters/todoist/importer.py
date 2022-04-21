@@ -14,6 +14,8 @@ from ntimporters.utils import (
     id16,
     map_color,
     nt_limits,
+    nt_members_by_email,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -211,24 +213,26 @@ def _import_tasks(
             todoist_date.get("datetime", None) is None,
         )
 
-    def _get_responsible_id(task):
+    def _get_responsible_id(task: dict):
         """Get NT responsible_id given todoist assignee id"""
-        responsible_id = None
+        should_set_tag, responsible_id = False, None
         if task.get("assignee") and (
             collaborators := todoist_members(todoist_client, task.get("project_id"))
         ):
             if todoist_email := collaborators.get(task.get("assignee")):
                 responsible_id = nt_members[0].get(todoist_email)
-        elif task.get("due"):  # task with due set must be assign to someone
+        if not responsible_id and task.get("due"):
+            should_set_tag = True
             responsible_id = nt_members[1]
 
-        return models.Id16Nullable(responsible_id)
+        return should_set_tag, models.Id16Nullable(responsible_id)
 
     # get tasks and completed tasks, while completed tasks are fetched from sync api
     for task in todoist_sync_client.completed.get_all(project_id=to_project_id).get("items", []) + [
         task.to_dict() for task in todoist_client.get_tasks(project_id=to_project_id)
     ]:
         due_at, is_all_day = _parse_timestamp(task.get("due"))
+        should_set_tag, responsible_id = _get_responsible_id(task)
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -244,11 +248,13 @@ def _import_tasks(
                     project_position=float(task.get("order") or 1),
                     due_at=due_at,
                     is_all_day=is_all_day,
-                    responsible_id=_get_responsible_id(task),
+                    responsible_id=responsible_id,
                     ended_at=_parse_timestamp(task.get("completed_date"))[0],
                 )
             )
         ):
+            if should_set_tag:
+                set_unassigned_tag(nt_client, nt_task.id)
             _import_comments(nt_client, todoist_client, str(nt_task.id), task)
             _import_tags_assignments(
                 nt_api_tag_assignments, str(nt_task.id), tags_mapping, task.get("label_ids") or []
@@ -304,27 +310,6 @@ def _import_tags(nt_client, todoist_client, limits) -> dict:
         elif tag_name in nt_tags:
             mapping[str(tag.id)] = nt_tags.get(tag_name)
     return mapping
-
-
-@functools.cache
-def nt_members_by_email(nt_client) -> Tuple[dict, str]:
-    """Map NT emails to member ids"""
-    nt_members = {
-        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
-    }
-    mapping = {}
-    current_user_id = None
-    for user in apis.UsersApi(nt_client).get_users():
-        if hasattr(user, "email") and user.email:
-            email = user.email
-        elif hasattr(user, "invitation_email") and user.invitation_email:
-            email = user.invitation_email
-        else:
-            continue
-        if bool(user.is_me):
-            current_user_id = str(user.id)
-        mapping[str(email)] = nt_members.get(str(user.id))
-    return mapping, nt_members.get(current_user_id)
 
 
 @dataclass
