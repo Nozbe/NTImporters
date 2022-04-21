@@ -9,7 +9,7 @@ from openapi_client import apis, models
 from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
-# API_HOST = "https://api4.nozbe.com/v1/api"
+API_HOST = "https://api4.nozbe.com/v1/api"
 API_HOST = "http://localhost:8888/v1/api"
 
 
