@@ -25,8 +25,8 @@ from openapi_client.model_utils import (  # noqa: F401
     file_type,
     none_type,
     validate_get_composed_info,
+    OpenApiModel
 )
-from ..model_utils import OpenApiModel
 from openapi_client.exceptions import ApiAttributeError
 
 
@@ -94,11 +94,11 @@ class Comment(ModelNormal):
         """
         lazy_import()
         return {
-            'id': (Id16ReadOnly,),  # noqa: E501
             'body': (str,),  # noqa: E501
             'task_id': (Id16,),  # noqa: E501
             'author_id': (Id16ReadOnly,),  # noqa: E501
             'created_at': (TimestampReadOnly,),  # noqa: E501
+            'id': (Id16,),  # noqa: E501
             'edited_at': (TimestampNullable,),  # noqa: E501
             'is_deleted': (bool,),  # noqa: E501
             'is_pinned': (bool,),  # noqa: E501
@@ -112,11 +112,11 @@ class Comment(ModelNormal):
 
 
     attribute_map = {
-        'id': 'id',  # noqa: E501
         'body': 'body',  # noqa: E501
         'task_id': 'task_id',  # noqa: E501
         'author_id': 'author_id',  # noqa: E501
         'created_at': 'created_at',  # noqa: E501
+        'id': 'id',  # noqa: E501
         'edited_at': 'edited_at',  # noqa: E501
         'is_deleted': 'is_deleted',  # noqa: E501
         'is_pinned': 'is_pinned',  # noqa: E501
@@ -131,11 +131,10 @@ class Comment(ModelNormal):
 
     @classmethod
     @convert_js_args_to_python_args
-    def _from_openapi_data(cls, id, body, task_id, author_id, created_at, *args, **kwargs):  # noqa: E501
+    def _from_openapi_data(cls, body, task_id, author_id, created_at, *args, **kwargs):  # noqa: E501
         """Comment - a model defined in OpenAPI
 
         Args:
-            id (Id16ReadOnly):
             body (str):
             task_id (Id16):
             author_id (Id16ReadOnly):
@@ -172,6 +171,7 @@ class Comment(ModelNormal):
                                 Animal class but this time we won't travel
                                 through its discriminator because we passed in
                                 _visited_composed_classes = (Animal,)
+            id (Id16): [optional]  # noqa: E501
             edited_at (TimestampNullable): [optional]  # noqa: E501
             is_deleted (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
             is_pinned (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
@@ -204,7 +204,6 @@ class Comment(ModelNormal):
         self._configuration = _configuration
         self._visited_composed_classes = _visited_composed_classes + (self.__class__,)
 
-        self.id = id
         self.body = body
         self.task_id = task_id
         self.author_id = author_id
@@ -229,11 +228,10 @@ class Comment(ModelNormal):
     ])
 
     @convert_js_args_to_python_args
-    def __init__(self, id, body, task_id, author_id, created_at, *args, **kwargs):  # noqa: E501
+    def __init__(self, body, task_id, author_id, created_at, *args, **kwargs):  # noqa: E501
         """Comment - a model defined in OpenAPI
 
         Args:
-            id (Id16ReadOnly):
             body (str):
             task_id (Id16):
             author_id (Id16ReadOnly):
@@ -270,6 +268,7 @@ class Comment(ModelNormal):
                                 Animal class but this time we won't travel
                                 through its discriminator because we passed in
                                 _visited_composed_classes = (Animal,)
+            id (Id16): [optional]  # noqa: E501
             edited_at (TimestampNullable): [optional]  # noqa: E501
             is_deleted (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
             is_pinned (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
@@ -300,7 +299,6 @@ class Comment(ModelNormal):
         self._configuration = _configuration
         self._visited_composed_classes = _visited_composed_classes + (self.__class__,)
 
-        self.id = id
         self.body = body
         self.task_id = task_id
         self.author_id = author_id

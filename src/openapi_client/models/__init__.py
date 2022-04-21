@@ -11,6 +11,7 @@
 
 from openapi_client.model.color import Color
 from openapi_client.model.comment import Comment
+from openapi_client.model.group_assignment import GroupAssignment
 from openapi_client.model.id16 import Id16
 from openapi_client.model.id16_nullable import Id16Nullable
 from openapi_client.model.id16_read_only import Id16ReadOnly
@@ -19,6 +20,7 @@ from openapi_client.model.name import Name
 from openapi_client.model.name_allow_empty import NameAllowEmpty
 from openapi_client.model.project import Project
 from openapi_client.model.project_access import ProjectAccess
+from openapi_client.model.project_group import ProjectGroup
 from openapi_client.model.project_id import ProjectId
 from openapi_client.model.project_section import ProjectSection
 from openapi_client.model.reminder import Reminder
