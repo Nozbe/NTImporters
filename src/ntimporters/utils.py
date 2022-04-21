@@ -43,7 +43,36 @@ def strip_readonly(model: ModelNormal):
     return model
 
 
-def set_unassigned_tag(nt_client, task_id: str) -> Optional[str]:
+def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
+    """Add project to project' group"""
+    st_groups = _get_with_query(
+        nt_client,
+        apis.ProjectGroupsApi(nt_client).get_project_groups_endpoint,
+        [("limit", "1"), ("name", group_name)],
+    )
+    group_id = st_groups[0].get("id") if st_groups and st_groups[0] else None
+    if not group_id and (
+        group := apis.ProjectGroupsApi(nt_client).post_project_group(
+            strip_readonly(
+                models.ProjectGroup(
+                    name=models.Name(group_name), team_id=models.Id16(team_id), is_private=True
+                )
+            )
+        )
+    ):
+        group_id = group.get("id")
+    if group_id:
+        assignment = strip_readonly(
+            models.GroupAssignmentAssignment(
+                object_id=models.Id16(str(project_id)),
+                group_id=models.Id16(str(group_id)),
+                group_type="project",
+            )
+        )
+        apis.GroupAssignmentsApi(nt_client).post_group_assignment(assignment)
+
+
+def set_unassigned_tag(nt_client, task_id: str):
     """set 'missing responsability' tag"""
     tag_name, tag_id = "missing responsibility", None
     st_tags = _get_with_query(
