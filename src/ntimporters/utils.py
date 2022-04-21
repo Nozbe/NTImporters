@@ -10,7 +10,7 @@ from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
 API_HOST = "https://api4.nozbe.com/v1/api"
-# API_HOST = "http://localhost:8888/v1/api"
+API_HOST = "http://localhost:8888/v1/api"
 
 
 def id16():
@@ -24,6 +24,7 @@ class ImportException(Exception):
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
+    return
     if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
