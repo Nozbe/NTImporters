@@ -25,7 +25,7 @@ from openapi_client.model_utils import (  # noqa: F401
     file_type,
     none_type,
     validate_get_composed_info,
-    OpenApiModel
+    OpenApiModel,
 )
 from openapi_client.exceptions import ApiAttributeError
 
@@ -35,10 +35,11 @@ def lazy_import():
     from openapi_client.model.id16_nullable import Id16Nullable
     from openapi_client.model.id16_read_only import Id16ReadOnly
     from openapi_client.model.name import Name
-    globals()['Color'] = Color
-    globals()['Id16Nullable'] = Id16Nullable
-    globals()['Id16ReadOnly'] = Id16ReadOnly
-    globals()['Name'] = Name
+
+    globals()["Color"] = Color
+    globals()["Id16Nullable"] = Id16Nullable
+    globals()["Id16ReadOnly"] = Id16ReadOnly
+    globals()["Name"] = Name
 
 
 class Tag(ModelNormal):
@@ -66,73 +67,72 @@ class Tag(ModelNormal):
     """
 
     allowed_values = {
-        ('icon',): {
-            'None': None,
-            'NULL': "null",
-            'CART': "cart",
-            'ERRANDS': "errands",
-            'PHONE': "phone",
-            'HOME': "home",
-            'BULB': "bulb",
-            'DOLLAR': "dollar",
-            'COFFEE': "coffee",
-            'TIMER': "timer",
-            'BOOK': "book",
-            'CAR': "car",
-            'BATTERY': "battery",
-            'WRENCH': "wrench",
-            'CAMERA': "camera",
-            'HEART': "heart",
-            'PLANE': "plane",
-            'BABY': "baby",
-            'MAP-MARKER': "map-marker",
-            'ROCKET': "rocket",
-            'MUSIC': "music",
-            'BLOB': "blob",
-            'HARDWARE': "hardware",
-            'ACCESSIBILITY': "accessibility",
-            'APPLE-TAG': "apple-tag",
-            'BUY': "buy",
-            'CARDS': "cards",
-            'CLOTHES': "clothes",
-            'COMPUTER': "computer",
-            'DELIVERY': "delivery",
-            'DOWN': "down",
-            'ELECTRICITY': "electricity",
-            'FOOD': "food",
-            'FORKLIFT': "forklift",
-            'GIFT': "gift",
-            'IMAGE-TAG': "image-tag",
-            'MEASURE': "measure",
-            'MIC': "mic",
-            'MOVIE': "movie",
-            'NOK': "nok",
-            'NOTE': "note",
-            'OK': "ok",
-            'PLAY': "play",
-            'PROMO': "promo",
-            'SAW': "saw",
-            'UP': "up",
-            'PET': "pet",
-            'HOURGLASS': "hourglass",
-            'GAMEPAD': "gamepad",
-            'SHIELD_X': "shield_x",
-            'SHIELD': "shield",
-            'HAMMER': "hammer",
-            'PALETTE': "palette",
-            'STUDENT': "student",
-            'PUZZLE': "puzzle",
-            'LAYERS': "layers",
-            'CROWN': "crown",
-            'VOLUME': "volume",
-            'FOLDER': "folder",
-            'QR-CODE': "qr-code",
-            'USER': "user",
+        ("icon",): {
+            "None": None,
+            "NULL": "null",
+            "CART": "cart",
+            "ERRANDS": "errands",
+            "PHONE": "phone",
+            "HOME": "home",
+            "BULB": "bulb",
+            "DOLLAR": "dollar",
+            "COFFEE": "coffee",
+            "TIMER": "timer",
+            "BOOK": "book",
+            "CAR": "car",
+            "BATTERY": "battery",
+            "WRENCH": "wrench",
+            "CAMERA": "camera",
+            "HEART": "heart",
+            "PLANE": "plane",
+            "BABY": "baby",
+            "MAP-MARKER": "map-marker",
+            "ROCKET": "rocket",
+            "MUSIC": "music",
+            "BLOB": "blob",
+            "HARDWARE": "hardware",
+            "ACCESSIBILITY": "accessibility",
+            "APPLE-TAG": "apple-tag",
+            "BUY": "buy",
+            "CARDS": "cards",
+            "CLOTHES": "clothes",
+            "COMPUTER": "computer",
+            "DELIVERY": "delivery",
+            "DOWN": "down",
+            "ELECTRICITY": "electricity",
+            "FOOD": "food",
+            "FORKLIFT": "forklift",
+            "GIFT": "gift",
+            "IMAGE-TAG": "image-tag",
+            "MEASURE": "measure",
+            "MIC": "mic",
+            "MOVIE": "movie",
+            "NOK": "nok",
+            "NOTE": "note",
+            "OK": "ok",
+            "PLAY": "play",
+            "PROMO": "promo",
+            "SAW": "saw",
+            "UP": "up",
+            "PET": "pet",
+            "HOURGLASS": "hourglass",
+            "GAMEPAD": "gamepad",
+            "SHIELD_X": "shield_x",
+            "SHIELD": "shield",
+            "HAMMER": "hammer",
+            "PALETTE": "palette",
+            "STUDENT": "student",
+            "PUZZLE": "puzzle",
+            "LAYERS": "layers",
+            "CROWN": "crown",
+            "VOLUME": "volume",
+            "FOLDER": "folder",
+            "QR-CODE": "qr-code",
+            "USER": "user",
         },
     }
 
-    validations = {
-    }
+    validations = {}
 
     @cached_property
     def additional_properties_type():
@@ -141,7 +141,17 @@ class Tag(ModelNormal):
         of type self, this must run after the class is loaded
         """
         lazy_import()
-        return (bool, date, datetime, dict, float, int, list, str, none_type,)  # noqa: E501
+        return (
+            bool,
+            date,
+            datetime,
+            dict,
+            float,
+            int,
+            list,
+            str,
+            none_type,
+        )  # noqa: E501
 
     _nullable = False
 
@@ -157,32 +167,36 @@ class Tag(ModelNormal):
         """
         lazy_import()
         return {
-            'id': (Id16ReadOnly,),  # noqa: E501
-            'name': (Name,),  # noqa: E501
-            'team_id': (Id16Nullable,),  # noqa: E501
-            'color': (Color,),  # noqa: E501
-            'icon': (str, none_type,),  # noqa: E501
-            'is_favorite': (bool,),  # noqa: E501
-            'sidebar_position': (float, none_type,),  # noqa: E501
+            "id": (Id16ReadOnly,),  # noqa: E501
+            "name": (Name,),  # noqa: E501
+            "team_id": (Id16Nullable,),  # noqa: E501
+            "color": (Color,),  # noqa: E501
+            "icon": (
+                str,
+                none_type,
+            ),  # noqa: E501
+            "is_favorite": (bool,),  # noqa: E501
+            "sidebar_position": (
+                float,
+                none_type,
+            ),  # noqa: E501
         }
 
     @cached_property
     def discriminator():
         return None
 
-
     attribute_map = {
-        'id': 'id',  # noqa: E501
-        'name': 'name',  # noqa: E501
-        'team_id': 'team_id',  # noqa: E501
-        'color': 'color',  # noqa: E501
-        'icon': 'icon',  # noqa: E501
-        'is_favorite': 'is_favorite',  # noqa: E501
-        'sidebar_position': 'sidebar_position',  # noqa: E501
+        "id": "id",  # noqa: E501
+        "name": "name",  # noqa: E501
+        "team_id": "team_id",  # noqa: E501
+        "color": "color",  # noqa: E501
+        "icon": "icon",  # noqa: E501
+        "is_favorite": "is_favorite",  # noqa: E501
+        "sidebar_position": "sidebar_position",  # noqa: E501
     }
 
-    read_only_vars = {
-    }
+    read_only_vars = {}
 
     _composed_schemas = {}
 
@@ -233,17 +247,18 @@ class Tag(ModelNormal):
             sidebar_position (float, none_type): [optional]  # noqa: E501
         """
 
-        _check_type = kwargs.pop('_check_type', True)
-        _spec_property_naming = kwargs.pop('_spec_property_naming', False)
-        _path_to_item = kwargs.pop('_path_to_item', ())
-        _configuration = kwargs.pop('_configuration', None)
-        _visited_composed_classes = kwargs.pop('_visited_composed_classes', ())
+        _check_type = kwargs.pop("_check_type", True)
+        _spec_property_naming = kwargs.pop("_spec_property_naming", False)
+        _path_to_item = kwargs.pop("_path_to_item", ())
+        _configuration = kwargs.pop("_configuration", None)
+        _visited_composed_classes = kwargs.pop("_visited_composed_classes", ())
 
         self = super(OpenApiModel, cls).__new__(cls)
 
         if args:
             raise ApiTypeError(
-                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments." % (
+                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments."
+                % (
                     args,
                     self.__class__.__name__,
                 ),
@@ -261,23 +276,27 @@ class Tag(ModelNormal):
         self.id = id
         self.name = name
         for var_name, var_value in kwargs.items():
-            if var_name not in self.attribute_map and \
-                        self._configuration is not None and \
-                        self._configuration.discard_unknown_keys and \
-                        self.additional_properties_type is None:
+            if (
+                var_name not in self.attribute_map
+                and self._configuration is not None
+                and self._configuration.discard_unknown_keys
+                and self.additional_properties_type is None
+            ):
                 # discard variable.
                 continue
             setattr(self, var_name, var_value)
         return self
 
-    required_properties = set([
-        '_data_store',
-        '_check_type',
-        '_spec_property_naming',
-        '_path_to_item',
-        '_configuration',
-        '_visited_composed_classes',
-    ])
+    required_properties = set(
+        [
+            "_data_store",
+            "_check_type",
+            "_spec_property_naming",
+            "_path_to_item",
+            "_configuration",
+            "_visited_composed_classes",
+        ]
+    )
 
     @convert_js_args_to_python_args
     def __init__(self, id, name, *args, **kwargs):  # noqa: E501
@@ -325,15 +344,16 @@ class Tag(ModelNormal):
             sidebar_position (float, none_type): [optional]  # noqa: E501
         """
 
-        _check_type = kwargs.pop('_check_type', True)
-        _spec_property_naming = kwargs.pop('_spec_property_naming', False)
-        _path_to_item = kwargs.pop('_path_to_item', ())
-        _configuration = kwargs.pop('_configuration', None)
-        _visited_composed_classes = kwargs.pop('_visited_composed_classes', ())
+        _check_type = kwargs.pop("_check_type", True)
+        _spec_property_naming = kwargs.pop("_spec_property_naming", False)
+        _path_to_item = kwargs.pop("_path_to_item", ())
+        _configuration = kwargs.pop("_configuration", None)
+        _visited_composed_classes = kwargs.pop("_visited_composed_classes", ())
 
         if args:
             raise ApiTypeError(
-                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments." % (
+                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments."
+                % (
                     args,
                     self.__class__.__name__,
                 ),
@@ -351,13 +371,17 @@ class Tag(ModelNormal):
         self.id = id
         self.name = name
         for var_name, var_value in kwargs.items():
-            if var_name not in self.attribute_map and \
-                        self._configuration is not None and \
-                        self._configuration.discard_unknown_keys and \
-                        self.additional_properties_type is None:
+            if (
+                var_name not in self.attribute_map
+                and self._configuration is not None
+                and self._configuration.discard_unknown_keys
+                and self.additional_properties_type is None
+            ):
                 # discard variable.
                 continue
             setattr(self, var_name, var_value)
             if var_name in self.read_only_vars:
-                raise ApiAttributeError(f"`{var_name}` is a read-only attribute. Use `from_openapi_data` to instantiate "
-                                     f"class with read only attributes.")
+                raise ApiAttributeError(
+                    f"`{var_name}` is a read-only attribute. Use `from_openapi_data` to instantiate "
+                    f"class with read only attributes."
+                )

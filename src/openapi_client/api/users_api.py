@@ -20,7 +20,7 @@ from openapi_client.model_utils import (  # noqa: F401
     datetime,
     file_type,
     none_type,
-    validate_and_convert_types
+    validate_and_convert_types,
 )
 from openapi_client.model.user import User
 
@@ -38,282 +38,239 @@ class UsersApi(object):
         self.api_client = api_client
         self.get_user_by_id_endpoint = _Endpoint(
             settings={
-                'response_type': (User,),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/users/{id}',
-                'operation_id': 'get_user_by_id',
-                'http_method': 'GET',
-                'servers': None,
+                "response_type": (User,),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/users/{id}",
+                "operation_id": "get_user_by_id",
+                "http_method": "GET",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'id',
-                    'fields',
+                "all": [
+                    "id",
+                    "fields",
                 ],
-                'required': [
-                    'id',
+                "required": [
+                    "id",
                 ],
-                'nullable': [
+                "nullable": [],
+                "enum": [],
+                "validation": [
+                    "id",
+                    "fields",
                 ],
-                'enum': [
-                ],
-                'validation': [
-                    'id',
-                    'fields',
-                ]
             },
             root_map={
-                'validations': {
-                    ('id',): {
-                        'max_length': 16,
-                        'min_length': 16,
+                "validations": {
+                    ("id",): {
+                        "max_length": 16,
+                        "min_length": 16,
                     },
-                    ('fields',): {
-
-                        'regex': {
-                            'pattern': r'^[a-z_,]*$',  # noqa: E501
+                    ("fields",): {
+                        "regex": {
+                            "pattern": r"^[a-z_,]*$",  # noqa: E501
                         },
                     },
                 },
-                'allowed_values': {
+                "allowed_values": {},
+                "openapi_types": {
+                    "id": (str,),
+                    "fields": (str,),
                 },
-                'openapi_types': {
-                    'id':
-                        (str,),
-                    'fields':
-                        (str,),
+                "attribute_map": {
+                    "id": "id",
+                    "fields": "fields",
                 },
-                'attribute_map': {
-                    'id': 'id',
-                    'fields': 'fields',
+                "location_map": {
+                    "id": "path",
+                    "fields": "query",
                 },
-                'location_map': {
-                    'id': 'path',
-                    'fields': 'query',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [],
+                "accept": ["application/json"],
+                "content_type": [],
             },
-            api_client=api_client
+            api_client=api_client,
         )
         self.get_users_endpoint = _Endpoint(
             settings={
-                'response_type': ([User],),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/users',
-                'operation_id': 'get_users',
-                'http_method': 'GET',
-                'servers': None,
+                "response_type": ([User],),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/users",
+                "operation_id": "get_users",
+                "http_method": "GET",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'limit',
-                    'offset',
-                    'sort_by',
-                    'fields',
+                "all": [
+                    "limit",
+                    "offset",
+                    "sort_by",
+                    "fields",
                 ],
-                'required': [],
-                'nullable': [
+                "required": [],
+                "nullable": [],
+                "enum": [],
+                "validation": [
+                    "limit",
+                    "offset",
+                    "sort_by",
+                    "fields",
                 ],
-                'enum': [
-                ],
-                'validation': [
-                    'limit',
-                    'offset',
-                    'sort_by',
-                    'fields',
-                ]
             },
             root_map={
-                'validations': {
-                    ('limit',): {
-
-                        'inclusive_maximum': 10000,
-                        'inclusive_minimum': 1,
+                "validations": {
+                    ("limit",): {
+                        "inclusive_maximum": 10000,
+                        "inclusive_minimum": 1,
                     },
-                    ('offset',): {
-
-                        'inclusive_minimum': 0,
+                    ("offset",): {
+                        "inclusive_minimum": 0,
                     },
-                    ('sort_by',): {
-
-                        'regex': {
-                            'pattern': r'^[-a-z_,]*$',  # noqa: E501
+                    ("sort_by",): {
+                        "regex": {
+                            "pattern": r"^[-a-z_,]*$",  # noqa: E501
                         },
                     },
-                    ('fields',): {
-
-                        'regex': {
-                            'pattern': r'^[a-z_,]*$',  # noqa: E501
+                    ("fields",): {
+                        "regex": {
+                            "pattern": r"^[a-z_,]*$",  # noqa: E501
                         },
                     },
                 },
-                'allowed_values': {
+                "allowed_values": {},
+                "openapi_types": {
+                    "limit": (int,),
+                    "offset": (int,),
+                    "sort_by": (str,),
+                    "fields": (str,),
                 },
-                'openapi_types': {
-                    'limit':
-                        (int,),
-                    'offset':
-                        (int,),
-                    'sort_by':
-                        (str,),
-                    'fields':
-                        (str,),
+                "attribute_map": {
+                    "limit": "limit",
+                    "offset": "offset",
+                    "sort_by": "sortBy",
+                    "fields": "fields",
                 },
-                'attribute_map': {
-                    'limit': 'limit',
-                    'offset': 'offset',
-                    'sort_by': 'sortBy',
-                    'fields': 'fields',
+                "location_map": {
+                    "limit": "query",
+                    "offset": "query",
+                    "sort_by": "query",
+                    "fields": "query",
                 },
-                'location_map': {
-                    'limit': 'query',
-                    'offset': 'query',
-                    'sort_by': 'query',
-                    'fields': 'query',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [],
+                "accept": ["application/json"],
+                "content_type": [],
             },
-            api_client=api_client
+            api_client=api_client,
         )
         self.post_user_endpoint = _Endpoint(
             settings={
-                'response_type': (User,),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/users',
-                'operation_id': 'post_user',
-                'http_method': 'POST',
-                'servers': None,
+                "response_type": (User,),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/users",
+                "operation_id": "post_user",
+                "http_method": "POST",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'user',
+                "all": [
+                    "user",
                 ],
-                'required': [
-                    'user',
+                "required": [
+                    "user",
                 ],
-                'nullable': [
-                ],
-                'enum': [
-                ],
-                'validation': [
-                ]
+                "nullable": [],
+                "enum": [],
+                "validation": [],
             },
             root_map={
-                'validations': {
+                "validations": {},
+                "allowed_values": {},
+                "openapi_types": {
+                    "user": (User,),
                 },
-                'allowed_values': {
+                "attribute_map": {},
+                "location_map": {
+                    "user": "body",
                 },
-                'openapi_types': {
-                    'user':
-                        (User,),
-                },
-                'attribute_map': {
-                },
-                'location_map': {
-                    'user': 'body',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [
-                    'application/json'
-                ]
+                "accept": ["application/json"],
+                "content_type": ["application/json"],
             },
-            api_client=api_client
+            api_client=api_client,
         )
         self.put_user_by_id_endpoint = _Endpoint(
             settings={
-                'response_type': (User,),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/users/{id}',
-                'operation_id': 'put_user_by_id',
-                'http_method': 'PUT',
-                'servers': None,
+                "response_type": (User,),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/users/{id}",
+                "operation_id": "put_user_by_id",
+                "http_method": "PUT",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'id',
-                    'body',
+                "all": [
+                    "id",
+                    "body",
                 ],
-                'required': [
-                    'id',
-                    'body',
+                "required": [
+                    "id",
+                    "body",
                 ],
-                'nullable': [
+                "nullable": [],
+                "enum": [],
+                "validation": [
+                    "id",
                 ],
-                'enum': [
-                ],
-                'validation': [
-                    'id',
-                ]
             },
             root_map={
-                'validations': {
-                    ('id',): {
-                        'max_length': 16,
-                        'min_length': 16,
+                "validations": {
+                    ("id",): {
+                        "max_length": 16,
+                        "min_length": 16,
                     },
                 },
-                'allowed_values': {
+                "allowed_values": {},
+                "openapi_types": {
+                    "id": (str,),
+                    "body": (
+                        {
+                            str: (
+                                bool,
+                                date,
+                                datetime,
+                                dict,
+                                float,
+                                int,
+                                list,
+                                str,
+                                none_type,
+                            )
+                        },
+                    ),
                 },
-                'openapi_types': {
-                    'id':
-                        (str,),
-                    'body':
-                        ({str: (bool, date, datetime, dict, float, int, list, str, none_type)},),
+                "attribute_map": {
+                    "id": "id",
                 },
-                'attribute_map': {
-                    'id': 'id',
+                "location_map": {
+                    "id": "path",
+                    "body": "body",
                 },
-                'location_map': {
-                    'id': 'path',
-                    'body': 'body',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [
-                    'application/json'
-                ]
+                "accept": ["application/json"],
+                "content_type": ["application/json"],
             },
-            api_client=api_client
+            api_client=api_client,
         )
 
-    def get_user_by_id(
-        self,
-        id,
-        **kwargs
-    ):
+    def get_user_by_id(self, id, **kwargs):
         """Get user by ID  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -359,38 +316,19 @@ class UsersApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
-        kwargs['id'] = \
-            id
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
+        kwargs["id"] = id
         return self.get_user_by_id_endpoint.call_with_http_info(**kwargs)
 
-    def get_users(
-        self,
-        **kwargs
-    ):
+    def get_users(self, **kwargs):
         """Get accessible users. Filter results by adding params, e.g. ?name=John  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -437,37 +375,18 @@ class UsersApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
         return self.get_users_endpoint.call_with_http_info(**kwargs)
 
-    def post_user(
-        self,
-        user,
-        **kwargs
-    ):
+    def post_user(self, user, **kwargs):
         """Add a user  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -512,40 +431,19 @@ class UsersApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
-        kwargs['user'] = \
-            user
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
+        kwargs["user"] = user
         return self.post_user_endpoint.call_with_http_info(**kwargs)
 
-    def put_user_by_id(
-        self,
-        id,
-        body,
-        **kwargs
-    ):
+    def put_user_by_id(self, id, body, **kwargs):
         """Update a user  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -591,33 +489,15 @@ class UsersApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
-        kwargs['id'] = \
-            id
-        kwargs['body'] = \
-            body
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
+        kwargs["id"] = id
+        kwargs["body"] = body
         return self.put_user_by_id_endpoint.call_with_http_info(**kwargs)
-

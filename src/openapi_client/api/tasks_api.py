@@ -20,7 +20,7 @@ from openapi_client.model_utils import (  # noqa: F401
     datetime,
     file_type,
     none_type,
-    validate_and_convert_types
+    validate_and_convert_types,
 )
 from openapi_client.model.task import Task
 
@@ -38,336 +38,286 @@ class TasksApi(object):
         self.api_client = api_client
         self.delete_task_by_id_endpoint = _Endpoint(
             settings={
-                'response_type': None,
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/tasks/{id}',
-                'operation_id': 'delete_task_by_id',
-                'http_method': 'DELETE',
-                'servers': None,
+                "response_type": None,
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/tasks/{id}",
+                "operation_id": "delete_task_by_id",
+                "http_method": "DELETE",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'id',
+                "all": [
+                    "id",
                 ],
-                'required': [
-                    'id',
+                "required": [
+                    "id",
                 ],
-                'nullable': [
+                "nullable": [],
+                "enum": [],
+                "validation": [
+                    "id",
                 ],
-                'enum': [
-                ],
-                'validation': [
-                    'id',
-                ]
             },
             root_map={
-                'validations': {
-                    ('id',): {
-                        'max_length': 16,
-                        'min_length': 16,
+                "validations": {
+                    ("id",): {
+                        "max_length": 16,
+                        "min_length": 16,
                     },
                 },
-                'allowed_values': {
+                "allowed_values": {},
+                "openapi_types": {
+                    "id": (str,),
                 },
-                'openapi_types': {
-                    'id':
-                        (str,),
+                "attribute_map": {
+                    "id": "id",
                 },
-                'attribute_map': {
-                    'id': 'id',
+                "location_map": {
+                    "id": "path",
                 },
-                'location_map': {
-                    'id': 'path',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [],
-                'content_type': [],
+                "accept": [],
+                "content_type": [],
             },
-            api_client=api_client
+            api_client=api_client,
         )
         self.get_task_by_id_endpoint = _Endpoint(
             settings={
-                'response_type': (Task,),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/tasks/{id}',
-                'operation_id': 'get_task_by_id',
-                'http_method': 'GET',
-                'servers': None,
+                "response_type": (Task,),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/tasks/{id}",
+                "operation_id": "get_task_by_id",
+                "http_method": "GET",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'id',
-                    'fields',
+                "all": [
+                    "id",
+                    "fields",
                 ],
-                'required': [
-                    'id',
+                "required": [
+                    "id",
                 ],
-                'nullable': [
+                "nullable": [],
+                "enum": [],
+                "validation": [
+                    "id",
+                    "fields",
                 ],
-                'enum': [
-                ],
-                'validation': [
-                    'id',
-                    'fields',
-                ]
             },
             root_map={
-                'validations': {
-                    ('id',): {
-                        'max_length': 16,
-                        'min_length': 16,
+                "validations": {
+                    ("id",): {
+                        "max_length": 16,
+                        "min_length": 16,
                     },
-                    ('fields',): {
-
-                        'regex': {
-                            'pattern': r'^[a-z_,]*$',  # noqa: E501
+                    ("fields",): {
+                        "regex": {
+                            "pattern": r"^[a-z_,]*$",  # noqa: E501
                         },
                     },
                 },
-                'allowed_values': {
+                "allowed_values": {},
+                "openapi_types": {
+                    "id": (str,),
+                    "fields": (str,),
                 },
-                'openapi_types': {
-                    'id':
-                        (str,),
-                    'fields':
-                        (str,),
+                "attribute_map": {
+                    "id": "id",
+                    "fields": "fields",
                 },
-                'attribute_map': {
-                    'id': 'id',
-                    'fields': 'fields',
+                "location_map": {
+                    "id": "path",
+                    "fields": "query",
                 },
-                'location_map': {
-                    'id': 'path',
-                    'fields': 'query',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [],
+                "accept": ["application/json"],
+                "content_type": [],
             },
-            api_client=api_client
+            api_client=api_client,
         )
         self.get_tasks_endpoint = _Endpoint(
             settings={
-                'response_type': ([Task],),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/tasks',
-                'operation_id': 'get_tasks',
-                'http_method': 'GET',
-                'servers': None,
+                "response_type": ([Task],),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/tasks",
+                "operation_id": "get_tasks",
+                "http_method": "GET",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'limit',
-                    'offset',
-                    'sort_by',
-                    'fields',
+                "all": [
+                    "limit",
+                    "offset",
+                    "sort_by",
+                    "fields",
                 ],
-                'required': [],
-                'nullable': [
+                "required": [],
+                "nullable": [],
+                "enum": [],
+                "validation": [
+                    "limit",
+                    "offset",
+                    "sort_by",
+                    "fields",
                 ],
-                'enum': [
-                ],
-                'validation': [
-                    'limit',
-                    'offset',
-                    'sort_by',
-                    'fields',
-                ]
             },
             root_map={
-                'validations': {
-                    ('limit',): {
-
-                        'inclusive_maximum': 10000,
-                        'inclusive_minimum': 1,
+                "validations": {
+                    ("limit",): {
+                        "inclusive_maximum": 10000,
+                        "inclusive_minimum": 1,
                     },
-                    ('offset',): {
-
-                        'inclusive_minimum': 0,
+                    ("offset",): {
+                        "inclusive_minimum": 0,
                     },
-                    ('sort_by',): {
-
-                        'regex': {
-                            'pattern': r'^[-a-z_,]*$',  # noqa: E501
+                    ("sort_by",): {
+                        "regex": {
+                            "pattern": r"^[-a-z_,]*$",  # noqa: E501
                         },
                     },
-                    ('fields',): {
-
-                        'regex': {
-                            'pattern': r'^[a-z_,]*$',  # noqa: E501
+                    ("fields",): {
+                        "regex": {
+                            "pattern": r"^[a-z_,]*$",  # noqa: E501
                         },
                     },
                 },
-                'allowed_values': {
+                "allowed_values": {},
+                "openapi_types": {
+                    "limit": (int,),
+                    "offset": (int,),
+                    "sort_by": (str,),
+                    "fields": (str,),
                 },
-                'openapi_types': {
-                    'limit':
-                        (int,),
-                    'offset':
-                        (int,),
-                    'sort_by':
-                        (str,),
-                    'fields':
-                        (str,),
+                "attribute_map": {
+                    "limit": "limit",
+                    "offset": "offset",
+                    "sort_by": "sortBy",
+                    "fields": "fields",
                 },
-                'attribute_map': {
-                    'limit': 'limit',
-                    'offset': 'offset',
-                    'sort_by': 'sortBy',
-                    'fields': 'fields',
+                "location_map": {
+                    "limit": "query",
+                    "offset": "query",
+                    "sort_by": "query",
+                    "fields": "query",
                 },
-                'location_map': {
-                    'limit': 'query',
-                    'offset': 'query',
-                    'sort_by': 'query',
-                    'fields': 'query',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [],
+                "accept": ["application/json"],
+                "content_type": [],
             },
-            api_client=api_client
+            api_client=api_client,
         )
         self.post_task_endpoint = _Endpoint(
             settings={
-                'response_type': (Task,),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/tasks',
-                'operation_id': 'post_task',
-                'http_method': 'POST',
-                'servers': None,
+                "response_type": (Task,),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/tasks",
+                "operation_id": "post_task",
+                "http_method": "POST",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'task',
+                "all": [
+                    "task",
                 ],
-                'required': [
-                    'task',
+                "required": [
+                    "task",
                 ],
-                'nullable': [
-                ],
-                'enum': [
-                ],
-                'validation': [
-                ]
+                "nullable": [],
+                "enum": [],
+                "validation": [],
             },
             root_map={
-                'validations': {
+                "validations": {},
+                "allowed_values": {},
+                "openapi_types": {
+                    "task": (Task,),
                 },
-                'allowed_values': {
+                "attribute_map": {},
+                "location_map": {
+                    "task": "body",
                 },
-                'openapi_types': {
-                    'task':
-                        (Task,),
-                },
-                'attribute_map': {
-                },
-                'location_map': {
-                    'task': 'body',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [
-                    'application/json'
-                ]
+                "accept": ["application/json"],
+                "content_type": ["application/json"],
             },
-            api_client=api_client
+            api_client=api_client,
         )
         self.put_task_by_id_endpoint = _Endpoint(
             settings={
-                'response_type': (Task,),
-                'auth': [
-                    'ApiKeyAuth'
-                ],
-                'endpoint_path': '/tasks/{id}',
-                'operation_id': 'put_task_by_id',
-                'http_method': 'PUT',
-                'servers': None,
+                "response_type": (Task,),
+                "auth": ["ApiKeyAuth"],
+                "endpoint_path": "/tasks/{id}",
+                "operation_id": "put_task_by_id",
+                "http_method": "PUT",
+                "servers": None,
             },
             params_map={
-                'all': [
-                    'id',
-                    'body',
+                "all": [
+                    "id",
+                    "body",
                 ],
-                'required': [
-                    'id',
-                    'body',
+                "required": [
+                    "id",
+                    "body",
                 ],
-                'nullable': [
+                "nullable": [],
+                "enum": [],
+                "validation": [
+                    "id",
                 ],
-                'enum': [
-                ],
-                'validation': [
-                    'id',
-                ]
             },
             root_map={
-                'validations': {
-                    ('id',): {
-                        'max_length': 16,
-                        'min_length': 16,
+                "validations": {
+                    ("id",): {
+                        "max_length": 16,
+                        "min_length": 16,
                     },
                 },
-                'allowed_values': {
+                "allowed_values": {},
+                "openapi_types": {
+                    "id": (str,),
+                    "body": (
+                        {
+                            str: (
+                                bool,
+                                date,
+                                datetime,
+                                dict,
+                                float,
+                                int,
+                                list,
+                                str,
+                                none_type,
+                            )
+                        },
+                    ),
                 },
-                'openapi_types': {
-                    'id':
-                        (str,),
-                    'body':
-                        ({str: (bool, date, datetime, dict, float, int, list, str, none_type)},),
+                "attribute_map": {
+                    "id": "id",
                 },
-                'attribute_map': {
-                    'id': 'id',
+                "location_map": {
+                    "id": "path",
+                    "body": "body",
                 },
-                'location_map': {
-                    'id': 'path',
-                    'body': 'body',
-                },
-                'collection_format_map': {
-                }
+                "collection_format_map": {},
             },
             headers_map={
-                'accept': [
-                    'application/json'
-                ],
-                'content_type': [
-                    'application/json'
-                ]
+                "accept": ["application/json"],
+                "content_type": ["application/json"],
             },
-            api_client=api_client
+            api_client=api_client,
         )
 
-    def delete_task_by_id(
-        self,
-        id,
-        **kwargs
-    ):
+    def delete_task_by_id(self, id, **kwargs):
         """Delete a task  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -412,39 +362,19 @@ class TasksApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
-        kwargs['id'] = \
-            id
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
+        kwargs["id"] = id
         return self.delete_task_by_id_endpoint.call_with_http_info(**kwargs)
 
-    def get_task_by_id(
-        self,
-        id,
-        **kwargs
-    ):
+    def get_task_by_id(self, id, **kwargs):
         """Get task by ID  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -490,38 +420,19 @@ class TasksApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
-        kwargs['id'] = \
-            id
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
+        kwargs["id"] = id
         return self.get_task_by_id_endpoint.call_with_http_info(**kwargs)
 
-    def get_tasks(
-        self,
-        **kwargs
-    ):
+    def get_tasks(self, **kwargs):
         """Get accessible tasks. Filter results by adding params, e.g. ?project_id=abc&review_reason=delegated  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -568,37 +479,18 @@ class TasksApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
         return self.get_tasks_endpoint.call_with_http_info(**kwargs)
 
-    def post_task(
-        self,
-        task,
-        **kwargs
-    ):
+    def post_task(self, task, **kwargs):
         """Add a task  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -643,40 +535,19 @@ class TasksApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
-        kwargs['task'] = \
-            task
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
+        kwargs["task"] = task
         return self.post_task_endpoint.call_with_http_info(**kwargs)
 
-    def put_task_by_id(
-        self,
-        id,
-        body,
-        **kwargs
-    ):
+    def put_task_by_id(self, id, body, **kwargs):
         """Update a task  # noqa: E501
 
         This method makes a synchronous HTTP request by default. To make an
@@ -722,33 +593,15 @@ class TasksApi(object):
                 If the method is called asynchronously, returns the request
                 thread.
         """
-        kwargs['async_req'] = kwargs.get(
-            'async_req', False
-        )
-        kwargs['_return_http_data_only'] = kwargs.get(
-            '_return_http_data_only', True
-        )
-        kwargs['_preload_content'] = kwargs.get(
-            '_preload_content', True
-        )
-        kwargs['_request_timeout'] = kwargs.get(
-            '_request_timeout', None
-        )
-        kwargs['_check_input_type'] = kwargs.get(
-            '_check_input_type', True
-        )
-        kwargs['_check_return_type'] = kwargs.get(
-            '_check_return_type', True
-        )
-        kwargs['_spec_property_naming'] = kwargs.get(
-            '_spec_property_naming', False
-        )
-        kwargs['_content_type'] = kwargs.get(
-            '_content_type')
-        kwargs['_host_index'] = kwargs.get('_host_index')
-        kwargs['id'] = \
-            id
-        kwargs['body'] = \
-            body
+        kwargs["async_req"] = kwargs.get("async_req", False)
+        kwargs["_return_http_data_only"] = kwargs.get("_return_http_data_only", True)
+        kwargs["_preload_content"] = kwargs.get("_preload_content", True)
+        kwargs["_request_timeout"] = kwargs.get("_request_timeout", None)
+        kwargs["_check_input_type"] = kwargs.get("_check_input_type", True)
+        kwargs["_check_return_type"] = kwargs.get("_check_return_type", True)
+        kwargs["_spec_property_naming"] = kwargs.get("_spec_property_naming", False)
+        kwargs["_content_type"] = kwargs.get("_content_type")
+        kwargs["_host_index"] = kwargs.get("_host_index")
+        kwargs["id"] = id
+        kwargs["body"] = body
         return self.put_task_by_id_endpoint.call_with_http_info(**kwargs)
-

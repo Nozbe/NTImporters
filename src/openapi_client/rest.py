@@ -66,7 +66,9 @@ class RESTClientObject(object):
 
         addition_pool_args = {}
         if configuration.assert_hostname is not None:
-            addition_pool_args["assert_hostname"] = configuration.assert_hostname  # noqa: E501
+            addition_pool_args[
+                "assert_hostname"
+            ] = configuration.assert_hostname  # noqa: E501
 
         if configuration.retries is not None:
             addition_pool_args["retries"] = configuration.retries
@@ -139,7 +141,9 @@ class RESTClientObject(object):
         assert method in ["GET", "HEAD", "DELETE", "POST", "PUT", "PATCH", "OPTIONS"]
 
         if post_params and body:
-            raise ApiValueError("body parameter cannot be used with post_params parameter.")
+            raise ApiValueError(
+                "body parameter cannot be used with post_params parameter."
+            )
 
         post_params = post_params or {}
         headers = headers or {}
@@ -149,7 +153,9 @@ class RESTClientObject(object):
             if isinstance(_request_timeout, (int, float)):  # noqa: E501,F821
                 timeout = urllib3.Timeout(total=_request_timeout)
             elif isinstance(_request_timeout, tuple) and len(_request_timeout) == 2:
-                timeout = urllib3.Timeout(connect=_request_timeout[0], read=_request_timeout[1])
+                timeout = urllib3.Timeout(
+                    connect=_request_timeout[0], read=_request_timeout[1]
+                )
 
         try:
             # For `POST`, `PUT`, `PATCH`, `OPTIONS`, `DELETE`
@@ -173,7 +179,9 @@ class RESTClientObject(object):
                         timeout=timeout,
                         headers=headers,
                     )
-                elif headers["Content-Type"] == "application/x-www-form-urlencoded":  # noqa: E501
+                elif (
+                    headers["Content-Type"] == "application/x-www-form-urlencoded"
+                ):  # noqa: E501
                     r = self.pool_manager.request(
                         method,
                         url,
@@ -268,7 +276,12 @@ class RESTClientObject(object):
         return r
 
     def GET(
-        self, url, headers=None, query_params=None, _preload_content=True, _request_timeout=None
+        self,
+        url,
+        headers=None,
+        query_params=None,
+        _preload_content=True,
+        _request_timeout=None,
     ):
         return self.request(
             "GET",
@@ -280,7 +293,12 @@ class RESTClientObject(object):
         )
 
     def HEAD(
-        self, url, headers=None, query_params=None, _preload_content=True, _request_timeout=None
+        self,
+        url,
+        headers=None,
+        query_params=None,
+        _preload_content=True,
+        _request_timeout=None,
     ):
         return self.request(
             "HEAD",

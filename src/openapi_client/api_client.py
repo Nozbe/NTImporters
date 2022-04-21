@@ -65,7 +65,12 @@ class ApiClient(object):
     _pool = None
 
     def __init__(
-        self, configuration=None, header_name=None, header_value=None, cookie=None, pool_threads=1
+        self,
+        configuration=None,
+        header_name=None,
+        header_value=None,
+        cookie=None,
+        pool_threads=1,
     ):
         if configuration is None:
             configuration = Configuration.get_default_copy()
@@ -121,7 +126,9 @@ class ApiClient(object):
         resource_path: str,
         method: str,
         path_params: typing.Optional[typing.Dict[str, typing.Any]] = None,
-        query_params: typing.Optional[typing.List[typing.Tuple[str, typing.Any]]] = None,
+        query_params: typing.Optional[
+            typing.List[typing.Tuple[str, typing.Any]]
+        ] = None,
         header_params: typing.Optional[typing.Dict[str, typing.Any]] = None,
         body: typing.Optional[typing.Any] = None,
         post_params: typing.Optional[typing.List[typing.Tuple[str, typing.Any]]] = None,
@@ -131,7 +138,9 @@ class ApiClient(object):
         _return_http_data_only: typing.Optional[bool] = None,
         collection_formats: typing.Optional[typing.Dict[str, str]] = None,
         _preload_content: bool = True,
-        _request_timeout: typing.Optional[typing.Union[int, float, typing.Tuple]] = None,
+        _request_timeout: typing.Optional[
+            typing.Union[int, float, typing.Tuple]
+        ] = None,
         _host: typing.Optional[str] = None,
         _check_type: typing.Optional[bool] = None,
         _content_type: typing.Optional[str] = None,
@@ -146,7 +155,9 @@ class ApiClient(object):
             header_params["Cookie"] = self.cookie
         if header_params:
             header_params = self.sanitize_for_serialization(header_params)
-            header_params = dict(self.parameters_to_tuples(header_params, collection_formats))
+            header_params = dict(
+                self.parameters_to_tuples(header_params, collection_formats)
+            )
 
         # path parameters
         if path_params:
@@ -241,7 +252,9 @@ class ApiClient(object):
         new_params = []
         if collection_types is None:
             collection_types = dict
-        for k, v in params.items() if isinstance(params, dict) else params:  # noqa: E501
+        for k, v in (
+            params.items() if isinstance(params, dict) else params
+        ):  # noqa: E501
             if isinstance(
                 v, collection_types
             ):  # v is instance of collection_type, formatting as application/json
@@ -283,7 +296,9 @@ class ApiClient(object):
         elif isinstance(obj, (list, tuple)):
             return [cls.sanitize_for_serialization(item) for item in obj]
         if isinstance(obj, dict):
-            return {key: cls.sanitize_for_serialization(val) for key, val in obj.items()}
+            return {
+                key: cls.sanitize_for_serialization(val) for key, val in obj.items()
+            }
         raise ApiValueError(
             "Unable to prepare type {} for serialization".format(obj.__class__.__name__)
         )
@@ -313,7 +328,9 @@ class ApiClient(object):
         if response_type == (file_type,):
             content_disposition = response.getheader("Content-Disposition")
             return deserialize_file(
-                response.data, self.configuration, content_disposition=content_disposition
+                response.data,
+                self.configuration,
+                content_disposition=content_disposition,
             )
 
         # fetch data from response object
@@ -339,7 +356,9 @@ class ApiClient(object):
         resource_path: str,
         method: str,
         path_params: typing.Optional[typing.Dict[str, typing.Any]] = None,
-        query_params: typing.Optional[typing.List[typing.Tuple[str, typing.Any]]] = None,
+        query_params: typing.Optional[
+            typing.List[typing.Tuple[str, typing.Any]]
+        ] = None,
         header_params: typing.Optional[typing.Dict[str, typing.Any]] = None,
         body: typing.Optional[typing.Any] = None,
         post_params: typing.Optional[typing.List[typing.Tuple[str, typing.Any]]] = None,
@@ -350,7 +369,9 @@ class ApiClient(object):
         _return_http_data_only: typing.Optional[bool] = None,
         collection_formats: typing.Optional[typing.Dict[str, str]] = None,
         _preload_content: bool = True,
-        _request_timeout: typing.Optional[typing.Union[int, float, typing.Tuple]] = None,
+        _request_timeout: typing.Optional[
+            typing.Union[int, float, typing.Tuple]
+        ] = None,
         _host: typing.Optional[str] = None,
         _check_type: typing.Optional[bool] = None,
     ):
@@ -542,7 +563,9 @@ class ApiClient(object):
         new_params = []
         if collection_formats is None:
             collection_formats = {}
-        for k, v in params.items() if isinstance(params, dict) else params:  # noqa: E501
+        for k, v in (
+            params.items() if isinstance(params, dict) else params
+        ):  # noqa: E501
             if k in collection_formats:
                 collection_format = collection_formats[k]
                 if collection_format == "multi":
@@ -595,8 +618,12 @@ class ApiClient(object):
                     )
                 filename = os.path.basename(file_instance.name)
                 filedata = self.get_file_data_and_close_file(file_instance)
-                mimetype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-                params.append(tuple([param_name, tuple([filename, filedata, mimetype])]))
+                mimetype = (
+                    mimetypes.guess_type(filename)[0] or "application/octet-stream"
+                )
+                params.append(
+                    tuple([param_name, tuple([filename, filedata, mimetype])])
+                )
 
         return params
 
@@ -641,7 +668,9 @@ class ApiClient(object):
         else:
             return content_types[0]
 
-    def update_params_for_auth(self, headers, queries, auth_settings, resource_path, method, body):
+    def update_params_for_auth(
+        self, headers, queries, auth_settings, resource_path, method, body
+    ):
         """Updates header and query params based on authentication setting.
 
         :param headers: Header parameters dict to be updated.
@@ -666,7 +695,9 @@ class ApiClient(object):
                 elif auth_setting["in"] == "query":
                     queries.append((auth_setting["key"], auth_setting["value"]))
                 else:
-                    raise ApiValueError("Authentication token must be in `query` or `header`")
+                    raise ApiValueError(
+                        "Authentication token must be in `query` or `header`"
+                    )
 
 
 class Endpoint(object):
@@ -735,7 +766,15 @@ class Endpoint(object):
             "async_req": (bool,),
             "_host_index": (none_type, int),
             "_preload_content": (bool,),
-            "_request_timeout": (none_type, float, (float,), [float], int, (int,), [int]),
+            "_request_timeout": (
+                none_type,
+                float,
+                (float,),
+                [float],
+                int,
+                (int,),
+                [int],
+            ),
             "_return_http_data_only": (bool,),
             "_check_input_type": (bool,),
             "_check_return_type": (bool,),
@@ -798,9 +837,13 @@ class Endpoint(object):
                     params["body"] = param_value
                     continue
                 base_name = self.attribute_map[param_name]
-                if param_location == "form" and self.openapi_types[param_name] == (file_type,):
+                if param_location == "form" and self.openapi_types[param_name] == (
+                    file_type,
+                ):
                     params["file"][base_name] = [param_value]
-                elif param_location == "form" and self.openapi_types[param_name] == ([file_type],):
+                elif param_location == "form" and self.openapi_types[param_name] == (
+                    [file_type],
+                ):
                     # param_value is already a list
                     params["file"][base_name] = param_value
                 elif param_location in {"form", "query"}:
@@ -832,13 +875,17 @@ class Endpoint(object):
         try:
             index = (
                 self.api_client.configuration.server_operation_index.get(
-                    self.settings["operation_id"], self.api_client.configuration.server_index
+                    self.settings["operation_id"],
+                    self.api_client.configuration.server_index,
                 )
                 if kwargs["_host_index"] is None
                 else kwargs["_host_index"]
             )
-            server_variables = self.api_client.configuration.server_operation_variables.get(
-                self.settings["operation_id"], self.api_client.configuration.server_variables
+            server_variables = (
+                self.api_client.configuration.server_operation_variables.get(
+                    self.settings["operation_id"],
+                    self.api_client.configuration.server_variables,
+                )
             )
             _host = self.api_client.configuration.get_host_from_settings(
                 index, variables=server_variables, servers=self.settings["servers"]
@@ -846,7 +893,8 @@ class Endpoint(object):
         except IndexError:
             if self.settings["servers"]:
                 raise ApiValueError(
-                    "Invalid host index. Must be 0 <= index < %s" % len(self.settings["servers"])
+                    "Invalid host index. Must be 0 <= index < %s"
+                    % len(self.settings["servers"])
                 )
             _host = None
 
@@ -882,7 +930,9 @@ class Endpoint(object):
 
         accept_headers_list = self.headers_map["accept"]
         if accept_headers_list:
-            params["header"]["Accept"] = self.api_client.select_header_accept(accept_headers_list)
+            params["header"]["Accept"] = self.api_client.select_header_accept(
+                accept_headers_list
+            )
 
         if kwargs.get("_content_type"):
             params["header"]["Content-Type"] = kwargs["_content_type"]
@@ -891,7 +941,9 @@ class Endpoint(object):
             if content_type_headers_list:
                 if params["body"] != "":
                     header_list = self.api_client.select_header_content_type(
-                        content_type_headers_list, self.settings["http_method"], params["body"]
+                        content_type_headers_list,
+                        self.settings["http_method"],
+                        params["body"],
                     )
                     params["header"]["Content-Type"] = header_list
 
