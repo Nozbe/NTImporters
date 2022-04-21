@@ -33,8 +33,9 @@ from openapi_client.exceptions import ApiAttributeError
 def lazy_import():
     from openapi_client.model.id16 import Id16
     from openapi_client.model.id16_read_only import Id16ReadOnly
-    globals()['Id16'] = Id16
-    globals()['Id16ReadOnly'] = Id16ReadOnly
+
+    globals()["Id16"] = Id16
+    globals()["Id16ReadOnly"] = Id16ReadOnly
 
 
 class TeamMember(ModelNormal):
@@ -62,22 +63,22 @@ class TeamMember(ModelNormal):
     """
 
     allowed_values = {
-        ('role',): {
-            'OWNER': "owner",
-            'ADMIN': "admin",
-            'MEMBER': "member",
+        ("role",): {
+            "OWNER": "owner",
+            "ADMIN": "admin",
+            "MEMBER": "member",
         },
-        ('status',): {
-            'ACTIVE': "active",
-            'PENDING': "pending",
-            'REQUESTING_JOIN': "requesting_join",
-            'ARCHIVED': "archived",
+        ("status",): {
+            "ACTIVE": "active",
+            "PENDING": "pending",
+            "REQUESTING_JOIN": "requesting_join",
+            "ARCHIVED": "archived",
         },
     }
 
     validations = {
-        ('alias',): {
-            'max_length': 255,
+        ("alias",): {
+            "max_length": 255,
         },
     }
 
@@ -88,7 +89,17 @@ class TeamMember(ModelNormal):
         of type self, this must run after the class is loaded
         """
         lazy_import()
-        return (bool, date, datetime, dict, float, int, list, str, none_type,)  # noqa: E501
+        return (
+            bool,
+            date,
+            datetime,
+            dict,
+            float,
+            int,
+            list,
+            str,
+            none_type,
+        )  # noqa: E501
 
     _nullable = False
 
@@ -104,42 +115,51 @@ class TeamMember(ModelNormal):
         """
         lazy_import()
         return {
-            'id': (Id16ReadOnly,),  # noqa: E501
-            'team_id': (Id16,),  # noqa: E501
-            'user_id': (Id16,),  # noqa: E501
-            'role': (str,),  # noqa: E501
-            'status': (str,),  # noqa: E501
-            'alias': (str, none_type,),  # noqa: E501
-            'description': (str, none_type,),  # noqa: E501
-            'is_favorite': (bool,),  # noqa: E501
-            'sidebar_position': (float, none_type,),  # noqa: E501
+            "id": (Id16ReadOnly,),  # noqa: E501
+            "team_id": (Id16,),  # noqa: E501
+            "user_id": (Id16,),  # noqa: E501
+            "role": (str,),  # noqa: E501
+            "status": (str,),  # noqa: E501
+            "alias": (
+                str,
+                none_type,
+            ),  # noqa: E501
+            "description": (
+                str,
+                none_type,
+            ),  # noqa: E501
+            "is_favorite": (bool,),  # noqa: E501
+            "sidebar_position": (
+                float,
+                none_type,
+            ),  # noqa: E501
         }
 
     @cached_property
     def discriminator():
         return None
 
-
     attribute_map = {
-        'id': 'id',  # noqa: E501
-        'team_id': 'team_id',  # noqa: E501
-        'user_id': 'user_id',  # noqa: E501
-        'role': 'role',  # noqa: E501
-        'status': 'status',  # noqa: E501
-        'alias': 'alias',  # noqa: E501
-        'description': 'description',  # noqa: E501
-        'is_favorite': 'is_favorite',  # noqa: E501
-        'sidebar_position': 'sidebar_position',  # noqa: E501
+        "id": "id",  # noqa: E501
+        "team_id": "team_id",  # noqa: E501
+        "user_id": "user_id",  # noqa: E501
+        "role": "role",  # noqa: E501
+        "status": "status",  # noqa: E501
+        "alias": "alias",  # noqa: E501
+        "description": "description",  # noqa: E501
+        "is_favorite": "is_favorite",  # noqa: E501
+        "sidebar_position": "sidebar_position",  # noqa: E501
     }
 
-    read_only_vars = {
-    }
+    read_only_vars = {}
 
     _composed_schemas = {}
 
     @classmethod
     @convert_js_args_to_python_args
-    def _from_openapi_data(cls, id, team_id, user_id, role, status, *args, **kwargs):  # noqa: E501
+    def _from_openapi_data(
+        cls, id, team_id, user_id, role, status, *args, **kwargs
+    ):  # noqa: E501
         """TeamMember - a model defined in OpenAPI
 
         Args:
@@ -186,17 +206,18 @@ class TeamMember(ModelNormal):
             sidebar_position (float, none_type): [optional]  # noqa: E501
         """
 
-        _check_type = kwargs.pop('_check_type', True)
-        _spec_property_naming = kwargs.pop('_spec_property_naming', False)
-        _path_to_item = kwargs.pop('_path_to_item', ())
-        _configuration = kwargs.pop('_configuration', None)
-        _visited_composed_classes = kwargs.pop('_visited_composed_classes', ())
+        _check_type = kwargs.pop("_check_type", True)
+        _spec_property_naming = kwargs.pop("_spec_property_naming", False)
+        _path_to_item = kwargs.pop("_path_to_item", ())
+        _configuration = kwargs.pop("_configuration", None)
+        _visited_composed_classes = kwargs.pop("_visited_composed_classes", ())
 
         self = super(OpenApiModel, cls).__new__(cls)
 
         if args:
             raise ApiTypeError(
-                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments." % (
+                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments."
+                % (
                     args,
                     self.__class__.__name__,
                 ),
@@ -217,26 +238,32 @@ class TeamMember(ModelNormal):
         self.role = role
         self.status = status
         for var_name, var_value in kwargs.items():
-            if var_name not in self.attribute_map and \
-                        self._configuration is not None and \
-                        self._configuration.discard_unknown_keys and \
-                        self.additional_properties_type is None:
+            if (
+                var_name not in self.attribute_map
+                and self._configuration is not None
+                and self._configuration.discard_unknown_keys
+                and self.additional_properties_type is None
+            ):
                 # discard variable.
                 continue
             setattr(self, var_name, var_value)
         return self
 
-    required_properties = set([
-        '_data_store',
-        '_check_type',
-        '_spec_property_naming',
-        '_path_to_item',
-        '_configuration',
-        '_visited_composed_classes',
-    ])
+    required_properties = set(
+        [
+            "_data_store",
+            "_check_type",
+            "_spec_property_naming",
+            "_path_to_item",
+            "_configuration",
+            "_visited_composed_classes",
+        ]
+    )
 
     @convert_js_args_to_python_args
-    def __init__(self, id, team_id, user_id, role, status, *args, **kwargs):  # noqa: E501
+    def __init__(
+        self, id, team_id, user_id, role, status, *args, **kwargs
+    ):  # noqa: E501
         """TeamMember - a model defined in OpenAPI
 
         Args:
@@ -283,15 +310,16 @@ class TeamMember(ModelNormal):
             sidebar_position (float, none_type): [optional]  # noqa: E501
         """
 
-        _check_type = kwargs.pop('_check_type', True)
-        _spec_property_naming = kwargs.pop('_spec_property_naming', False)
-        _path_to_item = kwargs.pop('_path_to_item', ())
-        _configuration = kwargs.pop('_configuration', None)
-        _visited_composed_classes = kwargs.pop('_visited_composed_classes', ())
+        _check_type = kwargs.pop("_check_type", True)
+        _spec_property_naming = kwargs.pop("_spec_property_naming", False)
+        _path_to_item = kwargs.pop("_path_to_item", ())
+        _configuration = kwargs.pop("_configuration", None)
+        _visited_composed_classes = kwargs.pop("_visited_composed_classes", ())
 
         if args:
             raise ApiTypeError(
-                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments." % (
+                "Invalid positional arguments=%s passed to %s. Remove those invalid positional arguments."
+                % (
                     args,
                     self.__class__.__name__,
                 ),
@@ -312,13 +340,17 @@ class TeamMember(ModelNormal):
         self.role = role
         self.status = status
         for var_name, var_value in kwargs.items():
-            if var_name not in self.attribute_map and \
-                        self._configuration is not None and \
-                        self._configuration.discard_unknown_keys and \
-                        self.additional_properties_type is None:
+            if (
+                var_name not in self.attribute_map
+                and self._configuration is not None
+                and self._configuration.discard_unknown_keys
+                and self.additional_properties_type is None
+            ):
                 # discard variable.
                 continue
             setattr(self, var_name, var_value)
             if var_name in self.read_only_vars:
-                raise ApiAttributeError(f"`{var_name}` is a read-only attribute. Use `from_openapi_data` to instantiate "
-                                     f"class with read only attributes.")
+                raise ApiAttributeError(
+                    f"`{var_name}` is a read-only attribute. Use `from_openapi_data` to instantiate "
+                    f"class with read only attributes."
+                )
