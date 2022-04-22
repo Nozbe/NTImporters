@@ -42,75 +42,80 @@ class MondayClient:
         query = (
             f"boards (state:all ids: {project_id}) {{ groups {{ id title archived position }} }}"
         )
+
         return self._req(query).get("data", {}).get("boards", [{}])[0].get("groups", [])
 
-    def subitems(self, project_id: str, item_id: str) -> list:
-        """Get Monday subitems (NT tasks)"""
-        query = f"""items(ids: [{item_id}]) {{
-            subitems {{id}}
-        }}"""
-        # ASSUMPTION: if only one date-type column then it is due_at
-        tasks = []
-        resp = self._req(query).get("data", {}).get("boards", [{}])[0].get("items", [])
-        print("SSSSSSSSSSSSSSS", resp)
-        return resp
-        for task in resp:
-            counter, due_at = 0, None
-            task["is_all_day"] = False
-            for column in task.get("column_values"):
-                if column.get("type") == "date" and column.get("text"):
-                    if (counter := counter + 1) > 1:
-                        break
-                    try:
-                        task["is_all_day"] = len(column.get("text", "")) == 10
-                        due_at = parse_timestamp(column.get("text"))
-                    except (json.decoder.JSONDecodeError, ValueError):
-                        pass
-            task.pop("column_values", None)
-            tasks.append(
-                task
-                | {
-                    "due_at": due_at if counter == 1 else None,
-                    "group": task.get("group", {}).get("id"),
-                    "position": task.get("group", {}).get("position"),
-                }
-            )
-        return tasks
+    @staticmethod
+    def _convert_columns(task):
+        due_at, counter = None, 0
+        for column in task.get("column_values"):
+            if column.get("type") == "date" and column.get("text"):
+                if (counter := counter + 1) > 1:
+                    break
+                try:
+                    task["is_all_day"] = len(column.get("text", "")) == 10
+                    due_at = parse_timestamp(column.get("text"))
+                except (json.decoder.JSONDecodeError, ValueError):
+                    pass
+        return task, counter, due_at
 
     def tasks(self, project_id: str) -> list:
         """Get Monday items (NT tasks)"""
         query = f"""boards(state:all limit:{self.limit} ids:{project_id})
-        {{ items {{ id group {{id position}} name column_values {{ type value text title }} }}
+        {{ items(newest_first:false) {{ id group {{id}} name column_values {{ type value text title }} }}
         }}"""
         # ASSUMPTION: if only one date-type column then it is due_at
         tasks = []
-        for task in self._req(query).get("data", {}).get("boards", [{}])[0].get("items", []):
-            counter, due_at = 0, None
+        delta = 0
+        for i, task in enumerate(
+            self._req(query).get("data", {}).get("boards", [{}])[0].get("items", [])
+        ):
             task["is_all_day"] = False
-            for column in task.get("column_values"):
-                if column.get("type") == "date" and column.get("text"):
-                    if (counter := counter + 1) > 1:
-                        break
-                    try:
-                        task["is_all_day"] = len(column.get("text", "")) == 10
-                        due_at = parse_timestamp(column.get("text"))
-                    except (json.decoder.JSONDecodeError, ValueError):
-                        pass
+            task, counter, due_at = self._convert_columns(task)
             task.pop("column_values", None)
             tasks.append(
                 task
                 | {
                     "due_at": due_at if counter == 1 else None,
                     "group": task.get("group", {}).get("id"),
-                    "position": task.get("group", {}).get("position"),
+                    "position": i + delta + 1,
                 }
             )
+            subitems = self.subitems(task.get("id"), i + delta + 1)
+            delta += len(subitems)
+            tasks.extend(subitems)
+        return tasks
+
+    def subitems(self, item_id: str, delta) -> list:
+        """Get Monday subitems (NT tasks)"""
+        query = f"""items(ids:{item_id} limit:1)
+            {{ group {{id position}}
+                subitems{{ name column_values {{ value type text title }} }} }}
+        """
+        # ASSUMPTION: if only one date-type column then it is due_at
+        tasks = []
+        resp = self._req(query).get("data", {}).get("items", [])
+        for item in resp:
+            group_id = item.get("group", {}).get("id")
+            for i, task in enumerate(item.get("subitems", []) or []):
+                task["is_all_day"] = False
+                task, counter, due_at = self._convert_columns(task)
+                task.pop("column_values", None)
+                tasks.append(
+                    task
+                    | {
+                        "due_at": due_at if counter == 1 else None,
+                        "group": group_id,
+                        "position": 1 + i + delta,
+                    }
+                )
         return tasks
 
     def comments(self, task_id: str) -> dict:
         """Get Monday updates (task's comments)"""
         query = f"""items (ids: {task_id}) {{
-        updates(limit:{self.limit}) {{created_at, text_body, id, replies{{created_at, text_body}}, creator_id}}}}
+        updates(limit:{self.limit}) {{created_at, body, text_body, id,
+        replies{{created_at, text_body}}, creator_id}}}}
         """
         resp = self._req(query).get("data", {}).get("items", [{}])[0].get("updates", [])
         comments = []

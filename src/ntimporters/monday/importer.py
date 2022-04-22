@@ -60,6 +60,8 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
 
     def _import_project(project: dict, curr_member: str):
         """Import monday project"""
+        if project.get("name", "").startswith("Subitems of"):
+            return
         project_model = models.Project(
             id=models.Id16ReadOnly(id16()),
             name=models.NameAllowEmpty(trim(project.get("name", ""))),
@@ -105,6 +107,8 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
     )
 
     for project in monday_projects:
+        if project.get("state") in ("archived", "deleted"):
+            continue
         _import_project(project, curr_member)
 
 
