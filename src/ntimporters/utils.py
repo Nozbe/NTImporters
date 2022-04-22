@@ -80,20 +80,7 @@ def set_unassigned_tag(nt_client, task_id: str):
     st_tags = _get_with_query(
         nt_client, apis.TagsApi(nt_client).get_tags_endpoint, [("limit", "1"), ("name", tag_name)]
     )
-    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else None
-    if not tag_id and (
-        tag := apis.TagsApi(nt_client).post_tag(
-            strip_readonly(
-                models.Tag(
-                    models.Id16ReadOnly(id16()),
-                    models.Name(tag_name),
-                    color=map_color(None),
-                    is_favorite=False,
-                )
-            )
-        )
-    ):
-        tag_id = tag.get("id")
+    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
     if tag_id:
         assignment = strip_readonly(
             models.TagAssignment(
