@@ -56,7 +56,7 @@ def set_unassigned_tag(nt_client, task_id: str) -> Optional[str]:
                 models.Tag(
                     models.Id16ReadOnly(id16()),
                     models.Name(tag_name),
-                    color=map_color(map_color(None)),
+                    color=map_color(None),
                     is_favorite=False,
                 )
             )
