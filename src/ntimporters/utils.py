@@ -24,6 +24,8 @@ class ImportException(Exception):
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
+    if "localhost" in API_HOST:
+        return
     if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
@@ -43,26 +45,13 @@ def strip_readonly(model: ModelNormal):
     return model
 
 
-def set_unassigned_tag(nt_client, task_id: str) -> Optional[str]:
+def set_unassigned_tag(nt_client, task_id: str):
     """set 'missing responsability' tag"""
     tag_name, tag_id = "missing responsibility", None
     st_tags = _get_with_query(
         nt_client, apis.TagsApi(nt_client).get_tags_endpoint, [("limit", "1"), ("name", tag_name)]
     )
-    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else None
-    if not tag_id and (
-        tag := apis.TagsApi(nt_client).post_tag(
-            strip_readonly(
-                models.Tag(
-                    models.Id16ReadOnly(id16()),
-                    models.Name(tag_name),
-                    color=map_color(None),
-                    is_favorite=False,
-                )
-            )
-        )
-    ):
-        tag_id = tag.get("id")
+    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
     if tag_id:
         assignment = strip_readonly(
             models.TagAssignment(
@@ -166,3 +155,17 @@ def parse_timestamp(datetime: Optional[str]) -> Optional[models.TimestampNullabl
     if not datetime:
         return None
     return models.TimestampNullable(int(isoparse(datetime).timestamp() * 1000))
+
+
+def post_tag(nt_client, tag_name: str, color: str):
+    """Post tag to Nozbe"""
+    nt_tag = apis.TagsApi(nt_client).post_tag(
+        strip_readonly(
+            models.Tag(
+                models.Id16ReadOnly(id16()),
+                models.Name(trim(tag_name)),
+                color=map_color(color),
+            )
+        )
+    )
+    return str(nt_tag.id) if nt_tag else None
