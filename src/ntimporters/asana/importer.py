@@ -80,10 +80,9 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
         map_tag_id = {}
         for tag in asana_client.tags.find_by_workspace(workspace["gid"]):
             tag_full = asana_client.tags.find_by_id(tag["gid"])
-            nt_tag_id = post_tag(
+            if nt_tag_id := post_tag(
                 nt_client, tag_full.get("name", ""), _map_color(tag_full.get("color"))
-            )
-            if nt_tag_d:
+            ):
                 map_tag_id[tag["gid"]] = str(nt_tag_id)
 
         # import projects
