@@ -175,9 +175,9 @@ def _import_project_sections(
                         )
                     )
                 ):
-                    if task.get("due"):
-                        # TODO check user by email
-                        set_unassigned_tag(nt_client, str(nt_task.id))
+                    # TODO set responsible_id and below
+                    # if task.get("due"):
+                    #     set_unassigned_tag(nt_client, str(nt_task.id))
                     _import_tags(nt_client, str(nt_task.id), task, tags_mapping)
                     _import_comments(nt_client, trello_client, str(nt_task.id), task)
                     # TODO import attachments, reminders?

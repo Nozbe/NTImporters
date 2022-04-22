@@ -163,8 +163,9 @@ def _import_tasks(
                 )
             )
         ):
-            if task.get("due_at"):
-                set_unassigned_tag(nt_client, str(nt_task.id))
+            # TODO responsible_id and below
+            # if task.get("due_at"):
+            #     set_unassigned_tag(nt_client, str(nt_task.id))
             _import_comments(nt_client, monday_client, str(nt_task.id), task.get("id"))
 
 
