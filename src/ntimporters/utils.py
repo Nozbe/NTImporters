@@ -65,7 +65,7 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
         group_id = group.get("id")
     if group_id:
         assignment = strip_readonly(
-            models.GroupAssignmentAssignment(
+            models.GroupAssignment(
                 object_id=models.Id16(str(project_id)),
                 group_id=models.Id16(str(group_id)),
                 group_type="project",
@@ -87,7 +87,7 @@ def set_unassigned_tag(nt_client, task_id: str):
                 models.Tag(
                     models.Id16ReadOnly(id16()),
                     models.Name(tag_name),
-                    color=map_color(map_color(None)),
+                    color=map_color(None),
                     is_favorite=False,
                 )
             )
@@ -197,3 +197,17 @@ def parse_timestamp(datetime: Optional[str]) -> Optional[models.TimestampNullabl
     if not datetime:
         return None
     return models.TimestampNullable(int(isoparse(datetime).timestamp() * 1000))
+
+
+def post_tag(nt_client, tag_name: str, color: str):
+    """Post tag to Nozbe"""
+    nt_tag = apis.TagsApi(nt_client).post_tag(
+        strip_readonly(
+            models.Tag(
+                models.Id16ReadOnly(id16()),
+                models.Name(trim(tag_name)),
+                color=map_color(color),
+            )
+        )
+    )
+    return str(nt_tag.id) if nt_tag else None

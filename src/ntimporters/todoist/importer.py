@@ -1,20 +1,21 @@
 """Todoist -> Nozbe importer"""
 import functools
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.utils import (
     API_HOST,
     ImportException,
+    add_to_project_group,
     check_limits,
     get_projects_per_team,
     get_single_tasks_project_id,
     id16,
-    map_color,
     nt_limits,
     nt_members_by_email,
+    post_tag,
     set_unassigned_tag,
     strip_readonly,
     trim,
@@ -82,6 +83,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
 
             if not (nt_project_id := str(nt_project.get("id"))):
                 return
+            add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Todoist")
         else:
             nt_project_id = single_tasks_id
 
@@ -293,18 +295,9 @@ def _import_tags(nt_client, todoist_client, limits) -> dict:
     mapping = {}
     for tag in todoist_tags:
         if (tag_name := str(tag.name)) not in nt_tags and (
-            nt_tag := nt_api_tags.post_tag(
-                strip_readonly(
-                    models.Tag(
-                        models.Id16ReadOnly(id16()),
-                        models.Name(trim(tag_name)),
-                        color=map_color(str(tag.color)),  # TODO todoist color = some number
-                        is_favorite=tag.favorite,
-                    )
-                )
-            )
+            nt_tag_id := post_tag(nt_client, tag_name, tag.color)
         ):
-            mapping[tag.id] = str(nt_tag.id)
+            mapping[tag.id] = str(nt_tag_id)
         elif tag_name in nt_tags:
             mapping[str(tag.id)] = nt_tags.get(tag_name)
     return mapping
