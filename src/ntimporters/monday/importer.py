@@ -12,6 +12,7 @@ from ntimporters.utils import (
     get_projects_per_team,
     id16,
     nt_limits,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -162,6 +163,8 @@ def _import_tasks(
                 )
             )
         ):
+            if task.get("due_at"):
+                set_unassigned_tag(nt_client, str(nt_task.id))
             _import_comments(nt_client, monday_client, str(nt_task.id), task.get("id"))
 
 

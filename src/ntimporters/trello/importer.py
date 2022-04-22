@@ -15,6 +15,7 @@ from ntimporters.utils import (
     nt_limits,
     parse_timestamp,
     post_tag,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -174,6 +175,9 @@ def _import_project_sections(
                         )
                     )
                 ):
+                    if task.get("due"):
+                        # TODO check user by email
+                        set_unassigned_tag(nt_client, str(nt_task.id))
                     _import_tags(nt_client, str(nt_task.id), task, tags_mapping)
                     _import_comments(nt_client, trello_client, str(nt_task.id), task)
                     # TODO import attachments, reminders?
