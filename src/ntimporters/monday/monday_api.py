@@ -19,6 +19,7 @@ class MondayClient:
             self.api_path, json={"query": f"{{ {query} }}"}, headers=self.headers
         ):
             return resp.json()
+
         return {}
 
     def user(self) -> dict:
@@ -37,14 +38,49 @@ class MondayClient:
 
     def sections(self, project_id: str) -> list:
         """Get Monday groups (NT project sections)"""
-        query = f"boards (state:all ids: {project_id}) {{ groups {{ id title archived }} }}"
+
+        query = (
+            f"boards (state:all ids: {project_id}) {{ groups {{ id title archived position }} }}"
+        )
         return self._req(query).get("data", {}).get("boards", [{}])[0].get("groups", [])
+
+    def subitems(self, project_id: str, item_id: str) -> list:
+        """Get Monday subitems (NT tasks)"""
+        query = f"""items(ids: [{item_id}]) {{
+            subitems {{id}}
+        }}"""
+        # ASSUMPTION: if only one date-type column then it is due_at
+        tasks = []
+        resp = self._req(query).get("data", {}).get("boards", [{}])[0].get("items", [])
+        print("SSSSSSSSSSSSSSS", resp)
+        return resp
+        for task in resp:
+            counter, due_at = 0, None
+            task["is_all_day"] = False
+            for column in task.get("column_values"):
+                if column.get("type") == "date" and column.get("text"):
+                    if (counter := counter + 1) > 1:
+                        break
+                    try:
+                        task["is_all_day"] = len(column.get("text", "")) == 10
+                        due_at = parse_timestamp(column.get("text"))
+                    except (json.decoder.JSONDecodeError, ValueError):
+                        pass
+            task.pop("column_values", None)
+            tasks.append(
+                task
+                | {
+                    "due_at": due_at if counter == 1 else None,
+                    "group": task.get("group", {}).get("id"),
+                    "position": task.get("group", {}).get("position"),
+                }
+            )
+        return tasks
 
     def tasks(self, project_id: str) -> list:
         """Get Monday items (NT tasks)"""
         query = f"""boards(state:all limit:{self.limit} ids:{project_id})
-        {{
-        items {{ state id group {{id}} name column_values {{ type value text title }} }}
+        {{ items {{ id group {{id position}} name column_values {{ type value text title }} }}
         }}"""
         # ASSUMPTION: if only one date-type column then it is due_at
         tasks = []
@@ -66,6 +102,7 @@ class MondayClient:
                 | {
                     "due_at": due_at if counter == 1 else None,
                     "group": task.get("group", {}).get("id"),
+                    "position": task.get("group", {}).get("position"),
                 }
             )
         return tasks
@@ -73,9 +110,16 @@ class MondayClient:
     def comments(self, task_id: str) -> dict:
         """Get Monday updates (task's comments)"""
         query = f"""items (ids: {task_id}) {{
-        updates(limit:{self.limit}) {{created_at, text_body, id, creator_id}}}}
+        updates(limit:{self.limit}) {{created_at, text_body, id, replies{{created_at, text_body}}, creator_id}}}}
         """
-        return self._req(query).get("data", {}).get("items", [{}])[0].get("updates", [])
+        resp = self._req(query).get("data", {}).get("items", [{}])[0].get("updates", [])
+        comments = []
+        for comment in reversed(resp):
+            replies = comment.pop("replies", None) or []
+            comments.append(comment)
+            for reply in replies:
+                comments.append(reply)
+        return comments
 
     def users(self) -> dict:
         """Get Monday users"""
