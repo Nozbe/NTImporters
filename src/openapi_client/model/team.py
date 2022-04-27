@@ -62,6 +62,9 @@ class Team(ModelNormal):
     """
 
     allowed_values = {
+        ('is_personal',): {
+            'FALSE': False,
+        },
         ('color',): {
             'EMPTY': "",
             'AVATARCOLOR1': "avatarColor1",
@@ -132,7 +135,6 @@ class Team(ModelNormal):
     }
 
     read_only_vars = {
-        'is_personal',  # noqa: E501
         'limits',  # noqa: E501
         'plan_info',  # noqa: E501
     }
@@ -179,7 +181,7 @@ class Team(ModelNormal):
                                 Animal class but this time we won't travel
                                 through its discriminator because we passed in
                                 _visited_composed_classes = (Animal,)
-            is_personal (bool): [optional]  # noqa: E501
+            is_personal (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
             color (str): [optional]  # noqa: E501
             avatar_url (str, none_type): [optional]  # noqa: E501
             limits (str, none_type): [optional]  # noqa: E501
@@ -272,7 +274,7 @@ class Team(ModelNormal):
                                 Animal class but this time we won't travel
                                 through its discriminator because we passed in
                                 _visited_composed_classes = (Animal,)
-            is_personal (bool): [optional]  # noqa: E501
+            is_personal (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
             color (str): [optional]  # noqa: E501
             avatar_url (str, none_type): [optional]  # noqa: E501
             limits (str, none_type): [optional]  # noqa: E501
