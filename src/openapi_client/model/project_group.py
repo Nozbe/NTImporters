@@ -31,8 +31,12 @@ from openapi_client.exceptions import ApiAttributeError
 
 
 def lazy_import():
+    from openapi_client.model.id16 import Id16
     from openapi_client.model.id16_nullable import Id16Nullable
+    from openapi_client.model.name import Name
+    globals()['Id16'] = Id16
     globals()['Id16Nullable'] = Id16Nullable
+    globals()['Name'] = Name
 
 
 class ProjectGroup(ModelNormal):
@@ -88,8 +92,8 @@ class ProjectGroup(ModelNormal):
         """
         lazy_import()
         return {
-            'team_id': (Id16Nullable,),  # noqa: E501
-            'name': (str,),  # noqa: E501
+            'team_id': (Id16,),  # noqa: E501
+            'name': (Name,),  # noqa: E501
             'is_private': (bool,),  # noqa: E501
             'id': (Id16Nullable,),  # noqa: E501
         }
@@ -117,8 +121,8 @@ class ProjectGroup(ModelNormal):
         """ProjectGroup - a model defined in OpenAPI
 
         Args:
-            team_id (Id16Nullable):
-            name (str):
+            team_id (Id16):
+            name (Name):
 
         Keyword Args:
             is_private (bool): defaults to False  # noqa: E501
@@ -208,8 +212,8 @@ class ProjectGroup(ModelNormal):
         """ProjectGroup - a model defined in OpenAPI
 
         Args:
-            team_id (Id16Nullable):
-            name (str):
+            team_id (Id16):
+            name (Name):
 
         Keyword Args:
             is_private (bool): defaults to False  # noqa: E501
