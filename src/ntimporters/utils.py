@@ -24,7 +24,8 @@ class ImportException(Exception):
 
 def check_limits(limits: dict, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
-    return
+    if "localhost" in API_HOST:
+        return
     if current_len > (limit := limits.get(limit_name, 0)) > -1:
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
@@ -44,26 +45,42 @@ def strip_readonly(model: ModelNormal):
     return model
 
 
-def set_unassigned_tag(nt_client, task_id: str) -> Optional[str]:
+def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
+    """Add project to project' group"""
+    st_groups = _get_with_query(
+        nt_client,
+        apis.ProjectGroupsApi(nt_client).get_project_groups_endpoint,
+        [("limit", "1"), ("name", group_name)],
+    )
+    group_id = st_groups[0].get("id") if st_groups and st_groups[0] else None
+    if not group_id and (
+        group := apis.ProjectGroupsApi(nt_client).post_project_group(
+            strip_readonly(
+                models.ProjectGroup(
+                    name=models.Name(group_name), team_id=models.Id16(team_id), is_private=True
+                )
+            )
+        )
+    ):
+        group_id = group.get("id")
+    if group_id:
+        assignment = strip_readonly(
+            models.GroupAssignment(
+                object_id=models.Id16(str(project_id)),
+                group_id=models.Id16(str(group_id)),
+                group_type="project",
+            )
+        )
+        apis.GroupAssignmentsApi(nt_client).post_group_assignment(assignment)
+
+
+def set_unassigned_tag(nt_client, task_id: str):
     """set 'missing responsability' tag"""
     tag_name, tag_id = "missing responsibility", None
     st_tags = _get_with_query(
         nt_client, apis.TagsApi(nt_client).get_tags_endpoint, [("limit", "1"), ("name", tag_name)]
     )
-    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else None
-    if not tag_id and (
-        tag := apis.TagsApi(nt_client).post_tag(
-            strip_readonly(
-                models.Tag(
-                    models.Id16ReadOnly(id16()),
-                    models.Name(tag_name),
-                    color=map_color(map_color(None)),
-                    is_favorite=False,
-                )
-            )
-        )
-    ):
-        tag_id = tag.get("id")
+    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
     if tag_id:
         assignment = strip_readonly(
             models.TagAssignment(
@@ -167,3 +184,17 @@ def parse_timestamp(datetime: Optional[str]) -> Optional[models.TimestampNullabl
     if not datetime:
         return None
     return models.TimestampNullable(int(isoparse(datetime).timestamp() * 1000))
+
+
+def post_tag(nt_client, tag_name: str, color: str):
+    """Post tag to Nozbe"""
+    nt_tag = apis.TagsApi(nt_client).post_tag(
+        strip_readonly(
+            models.Tag(
+                models.Id16ReadOnly(id16()),
+                models.Name(trim(tag_name)),
+                color=map_color(color),
+            )
+        )
+    )
+    return str(nt_tag.id) if nt_tag else None

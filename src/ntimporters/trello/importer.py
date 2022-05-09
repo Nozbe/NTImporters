@@ -7,6 +7,7 @@ from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
     API_HOST,
     ImportException,
+    add_to_project_group,
     check_limits,
     current_nt_member,
     get_projects_per_team,
@@ -14,6 +15,7 @@ from ntimporters.utils import (
     map_color,
     nt_limits,
     parse_timestamp,
+    post_tag,
     strip_readonly,
     trim,
 )
@@ -80,7 +82,8 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         nt_project = projects_api.post_project(strip_readonly(project_model)) or {}
 
         if not (nt_project_id := str(nt_project.get("id"))):
-            raise ImportException("creating project failed")
+            return
+        add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Trello")
 
         _import_project_sections(
             nt_client,
@@ -188,17 +191,9 @@ def _import_tags_per_project(nt_client, trello_client, project: dict, limits: di
     )
     for tag in trello_tags:
         if (tag_name := tag.get("name")) not in nt_tags and (
-            nt_tag := nt_api_tags.post_tag(
-                strip_readonly(
-                    models.Tag(
-                        models.Id16ReadOnly(id16()),
-                        models.Name(trim(tag_name)),
-                        color=map_color(tag.get("color")),
-                    )
-                )
-            )
+            nt_tag_id := post_tag(nt_client, tag_name, tag.get("color"))
         ):
-            nt_tags[tag_name] = str(nt_tag.id)
+            nt_tags[tag_name] = str(nt_tag_id)
     return nt_tags
 
 

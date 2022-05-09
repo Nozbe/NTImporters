@@ -5,11 +5,13 @@ from typing import Optional
 import openapi_client as nt
 from ntimporters.utils import (
     API_HOST,
+    add_to_project_group,
     current_nt_member,
     get_single_tasks_project_id,
     id16,
     nt_members_by_email,
     parse_timestamp,
+    post_tag,
     set_unassigned_tag,
     strip_readonly,
     trim,
@@ -70,7 +72,6 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
 
 def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: str):
     """Import everything from Asana to Nozbe"""
-    nt_api_tags = apis.TagsApi(nt_client)
     nt_api_projects = apis.ProjectsApi(nt_client)
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_member_id = current_nt_member(nt_client)
@@ -80,18 +81,11 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
         map_tag_id = {}
         for tag in asana_client.tags.find_by_workspace(workspace["gid"]):
             tag_full = asana_client.tags.find_by_id(tag["gid"])
-            nt_tag = nt_api_tags.post_tag(
-                strip_readonly(
-                    models.Tag(
-                        id=models.Id16(id16()),
-                        name=models.Name(trim(tag_full.get("name", ""))),
-                        team_id=models.Id16Nullable(team_id),
-                        color=_map_color(tag_full.get("color")),
-                    )
-                )
+            nt_tag_id = post_tag(
+                nt_client, tag_full.get("name", ""), _map_color(tag_full.get("color"))
             )
-            if nt_tag:
-                map_tag_id[tag["gid"]] = str(nt_tag.get("id"))
+            if nt_tag_id:
+                map_tag_id[tag["gid"]] = str(nt_tag_id)
 
         # import projects
         for project in asana_client.projects.find_by_workspace(workspace["gid"]):
@@ -116,6 +110,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             if not nt_project:
                 continue
             nt_project_id = str(nt_project.get("id"))
+            add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Asana")
 
             # import project sections
             map_section_id = {}

@@ -7,6 +7,7 @@ from ntimporters.monday.monday_api import MondayClient
 from ntimporters.utils import (
     API_HOST,
     ImportException,
+    add_to_project_group,
     check_limits,
     current_nt_member,
     get_projects_per_team,
@@ -76,6 +77,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         nt_project = projects_api.post_project(strip_readonly(project_model)) or {}
         if not (nt_project_id := str(nt_project.get("id"))):
             return
+        add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Monday")
 
         _import_project_sections(
             nt_client, monday_client, nt_project_id, project, limits, curr_member
