@@ -7,6 +7,7 @@ from ntimporters.monday.monday_api import MondayClient
 from ntimporters.utils import (
     API_HOST,
     ImportException,
+    add_to_project_group,
     check_limits,
     current_nt_member,
     get_projects_per_team,
@@ -63,7 +64,6 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         if project.get("name", "").startswith("Subitems of"):
             return
         project_model = models.Project(
-            id=models.Id16ReadOnly(id16()),
             name=models.NameAllowEmpty(trim(project.get("name", ""))),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
@@ -80,6 +80,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         nt_project = projects_api.post_project(strip_readonly(project_model)) or {}
         if not (nt_project_id := str(nt_project.get("id"))):
             return
+        add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Monday")
 
         _import_project_sections(
             nt_client, monday_client, nt_project_id, project, limits, curr_member
@@ -153,7 +154,6 @@ def _import_tasks(
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    id=models.Id16ReadOnly(id16()),
                     name=models.Name(trim(task.get("name", ""))),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
@@ -163,7 +163,7 @@ def _import_tasks(
                     project_position=1.0,
                     due_at=task.get("due_at"),
                     is_all_day=task.get("is_all_day"),
-                    responsible_id=models.Id16Nullable(author_id if task.get("due_at") else None),
+                    responsible_id=author_id if task.get("due_at") else None,
                 )
             )
         ):
@@ -186,7 +186,6 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str)
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    id=models.Id16ReadOnly(id16()),
                     body=comment.get("text_body"),
                     task_id=models.Id16(nt_task_id),
                     created_at=models.TimestampReadOnly(1),

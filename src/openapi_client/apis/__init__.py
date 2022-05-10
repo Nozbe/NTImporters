@@ -15,7 +15,9 @@
 
 # Import APIs into API package:
 from openapi_client.api.comments_api import CommentsApi
+from openapi_client.api.group_assignments_api import GroupAssignmentsApi
 from openapi_client.api.project_accesses_api import ProjectAccessesApi
+from openapi_client.api.project_groups_api import ProjectGroupsApi
 from openapi_client.api.project_sections_api import ProjectSectionsApi
 from openapi_client.api.projects_api import ProjectsApi
 from openapi_client.api.reminders_api import RemindersApi

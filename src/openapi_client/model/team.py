@@ -25,8 +25,8 @@ from openapi_client.model_utils import (  # noqa: F401
     file_type,
     none_type,
     validate_get_composed_info,
+    OpenApiModel
 )
-from ..model_utils import OpenApiModel
 from openapi_client.exceptions import ApiAttributeError
 
 
@@ -135,7 +135,6 @@ class Team(ModelNormal):
     }
 
     read_only_vars = {
-        'is_personal',  # noqa: E501
         'limits',  # noqa: E501
         'plan_info',  # noqa: E501
     }

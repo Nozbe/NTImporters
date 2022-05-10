@@ -5,6 +5,7 @@ from typing import Optional
 import openapi_client as nt
 from ntimporters.utils import (
     API_HOST,
+    add_to_project_group,
     current_nt_member,
     get_single_tasks_project_id,
     id16,
@@ -91,12 +92,11 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             nt_project = nt_api_projects.post_project(
                 strip_readonly(
                     models.Project(
-                        models.Id16ReadOnly(id16()),
-                        models.NameAllowEmpty(trim(project_full.get("name", ""))),
-                        models.Id16(team_id),
-                        models.Id16ReadOnly(id16()),
-                        models.TimestampReadOnly(1),
-                        models.TimestampReadOnly(1),
+                        name=models.NameAllowEmpty(trim(project_full.get("name", ""))),
+                        team_id=models.Id16(team_id),
+                        author_id=models.Id16ReadOnly(id16()),
+                        created_at=models.TimestampReadOnly(1),
+                        last_event_at=models.TimestampReadOnly(1),
                         ended_at=models.TimestampNullable(
                             1 if project_full.get("archived") else None
                         ),
@@ -109,6 +109,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             if not nt_project:
                 continue
             nt_project_id = str(nt_project.get("id"))
+            add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Asana")
 
             # import project sections
             map_section_id = {}
@@ -121,10 +122,10 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
                 nt_section = nt_api_sections.post_project_section(
                     strip_readonly(
                         models.ProjectSection(
-                            models.Id16ReadOnly(id16()),
-                            models.Id16(nt_project_id),
-                            models.Name(trim(section_full.get("name", ""))),
-                            models.TimestampReadOnly(1),
+                            id=models.Id16ReadOnly(id16()),
+                            project_id=models.Id16(nt_project_id),
+                            name=models.Name(trim(section_full.get("name", ""))),
+                            created_at=models.TimestampReadOnly(1),
                             archived_at=models.TimestampNullable(1)
                             if section_full.get("archived")
                             else None,
@@ -207,15 +208,14 @@ def _import_tasks(
         nt_task = nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    models.Id16ReadOnly(id16()),
-                    models.Name(trim(task_full.get("name", ""))),
-                    models.ProjectId(nt_project_id),
-                    models.Id16ReadOnly(id16()),
-                    models.TimestampReadOnly(1),
-                    models.TimestampReadOnly(1),
+                    name=models.Name(trim(task_full.get("name", ""))),
+                    project_id=models.ProjectId(nt_project_id),
+                    author_id=models.Id16ReadOnly(id16()),
+                    created_at=models.TimestampReadOnly(1),
+                    last_activity_at=models.TimestampReadOnly(1),
                     project_section_id=_map_section_id(task_full, map_section_id),
                     due_at=due_at,
-                    responsible_id=models.Id16Nullable(responsible_id),
+                    responsible_id=responsible_id,
                     is_all_day=not task_full.get("due_at"),
                     ended_at=parse_timestamp(task_full.get("completed_at")),
                 )
@@ -232,26 +232,29 @@ def _import_tasks(
             nt_api_tag_assignments.post_tag_assignment(
                 strip_readonly(
                     models.TagAssignment(
-                        models.Id16ReadOnly(id16()),
-                        models.Id16(map_tag_id.get(tag["gid"])),
-                        models.Id16(nt_task_id),
+                        id=models.Id16(id16()),
+                        tag_id=models.Id16(map_tag_id.get(tag["gid"])),
+                        task_id=models.Id16(nt_task_id),
                     )
                 )
             )
 
         # import comments
-        if task_description := task_full.get("notes", ""):
+
+        def _post_comment(body, task_id):
             nt_api_comments.post_comment(
                 strip_readonly(
                     models.Comment(
-                        models.Id16ReadOnly(id16()),
-                        task_description,
-                        models.Id16(nt_task_id),
-                        models.Id16ReadOnly(id16()),
-                        models.TimestampReadOnly(1),
+                        body=body,
+                        task_id=models.Id16(task_id),
+                        author_id=models.Id16ReadOnly(id16()),
+                        created_at=models.TimestampReadOnly(1),
                     )
                 )
             )
+
+        if task_description := task_full.get("notes", ""):
+            _post_comment(task_description, nt_task_id)
         checklist = []
         for item in asana_client.tasks.get_subtasks_for_task(
             task["gid"], opt_fields="name,completed"
@@ -260,31 +263,11 @@ def _import_tasks(
             checklist.append(f"{checked} {item.get('name')}")
 
         if checklist:
-            nt_api_comments.post_comment(
-                strip_readonly(
-                    models.Comment(
-                        models.Id16ReadOnly(id16()),
-                        "\n".join(checklist),
-                        models.Id16(nt_task_id),
-                        models.Id16ReadOnly(id16()),
-                        models.TimestampReadOnly(1),
-                    )
-                )
-            )
+            _post_comment("\n".join(checklist), nt_task_id)
 
         for story in asana_client.stories.find_by_task(task["gid"]):
             if story.get("type") == "comment":
-                nt_api_comments.post_comment(
-                    strip_readonly(
-                        models.Comment(
-                            models.Id16ReadOnly(id16()),
-                            story.get("text"),
-                            models.Id16(nt_task_id),
-                            models.Id16ReadOnly(id16()),
-                            models.TimestampReadOnly(1),
-                        )
-                    )
-                )
+                _post_comment(story.get("text"), nt_task_id)
 
         # TODO import attachments
         # for attachment in asana_client.attachments.find_by_task(task["gid"]):

@@ -25,8 +25,8 @@ from openapi_client.model_utils import (  # noqa: F401
     file_type,
     none_type,
     validate_get_composed_info,
+    OpenApiModel
 )
-from ..model_utils import OpenApiModel
 from openapi_client.exceptions import ApiAttributeError
 
 
@@ -100,13 +100,13 @@ class Project(ModelNormal):
         """
         lazy_import()
         return {
-            'id': (Id16ReadOnly,),  # noqa: E501
             'name': (NameAllowEmpty,),  # noqa: E501
             'team_id': (Id16,),  # noqa: E501
             'author_id': (Id16ReadOnly,),  # noqa: E501
             'created_at': (TimestampReadOnly,),  # noqa: E501
             'last_event_at': (TimestampReadOnly,),  # noqa: E501
             'is_open': (bool,),  # noqa: E501
+            'id': (Id16,),  # noqa: E501
             'ended_at': (TimestampNullable,),  # noqa: E501
             'last_seen_event_at': (TimestampNullable,),  # noqa: E501
             'is_favorite': (bool,),  # noqa: E501
@@ -125,13 +125,13 @@ class Project(ModelNormal):
 
 
     attribute_map = {
-        'id': 'id',  # noqa: E501
         'name': 'name',  # noqa: E501
         'team_id': 'team_id',  # noqa: E501
         'author_id': 'author_id',  # noqa: E501
         'created_at': 'created_at',  # noqa: E501
         'last_event_at': 'last_event_at',  # noqa: E501
         'is_open': 'is_open',  # noqa: E501
+        'id': 'id',  # noqa: E501
         'ended_at': 'ended_at',  # noqa: E501
         'last_seen_event_at': 'last_seen_event_at',  # noqa: E501
         'is_favorite': 'is_favorite',  # noqa: E501
@@ -151,11 +151,10 @@ class Project(ModelNormal):
 
     @classmethod
     @convert_js_args_to_python_args
-    def _from_openapi_data(cls, id, name, team_id, author_id, created_at, last_event_at, *args, **kwargs):  # noqa: E501
+    def _from_openapi_data(cls, name, team_id, author_id, created_at, last_event_at, *args, **kwargs):  # noqa: E501
         """Project - a model defined in OpenAPI
 
         Args:
-            id (Id16ReadOnly):
             name (NameAllowEmpty):
             team_id (Id16):
             author_id (Id16ReadOnly):
@@ -194,6 +193,7 @@ class Project(ModelNormal):
                                 Animal class but this time we won't travel
                                 through its discriminator because we passed in
                                 _visited_composed_classes = (Animal,)
+            id (Id16): [optional]  # noqa: E501
             ended_at (TimestampNullable): [optional]  # noqa: E501
             last_seen_event_at (TimestampNullable): [optional]  # noqa: E501
             is_favorite (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
@@ -232,7 +232,6 @@ class Project(ModelNormal):
         self._configuration = _configuration
         self._visited_composed_classes = _visited_composed_classes + (self.__class__,)
 
-        self.id = id
         self.name = name
         self.team_id = team_id
         self.author_id = author_id
@@ -259,11 +258,10 @@ class Project(ModelNormal):
     ])
 
     @convert_js_args_to_python_args
-    def __init__(self, id, name, team_id, author_id, created_at, last_event_at, *args, **kwargs):  # noqa: E501
+    def __init__(self, name, team_id, author_id, created_at, last_event_at, *args, **kwargs):  # noqa: E501
         """Project - a model defined in OpenAPI
 
         Args:
-            id (Id16ReadOnly):
             name (NameAllowEmpty):
             team_id (Id16):
             author_id (Id16ReadOnly):
@@ -302,6 +300,7 @@ class Project(ModelNormal):
                                 Animal class but this time we won't travel
                                 through its discriminator because we passed in
                                 _visited_composed_classes = (Animal,)
+            id (Id16): [optional]  # noqa: E501
             ended_at (TimestampNullable): [optional]  # noqa: E501
             last_seen_event_at (TimestampNullable): [optional]  # noqa: E501
             is_favorite (bool): [optional] if omitted the server will use the default value of False  # noqa: E501
@@ -338,7 +337,6 @@ class Project(ModelNormal):
         self._configuration = _configuration
         self._visited_composed_classes = _visited_composed_classes + (self.__class__,)
 
-        self.id = id
         self.name = name
         self.team_id = team_id
         self.author_id = author_id

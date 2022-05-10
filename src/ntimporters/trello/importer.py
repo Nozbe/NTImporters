@@ -7,6 +7,7 @@ from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
     API_HOST,
     ImportException,
+    add_to_project_group,
     check_limits,
     current_nt_member,
     get_projects_per_team,
@@ -67,7 +68,6 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
     def _import_project(project: dict, curr_member: str):
         """Import trello project"""
         project_model = models.Project(
-            id=models.Id16ReadOnly(id16()),
             name=models.NameAllowEmpty(trim(project.get("name", ""))),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
@@ -83,7 +83,8 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str):
         nt_project = projects_api.post_project(strip_readonly(project_model)) or {}
 
         if not (nt_project_id := str(nt_project.get("id"))):
-            raise ImportException("creating project failed")
+            return
+        add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Trello")
 
         _import_project_sections(
             nt_client,
@@ -155,7 +156,6 @@ def _import_project_sections(
                 if nt_task := nt_api_tasks.post_task(
                     strip_readonly(
                         models.Task(
-                            id=models.Id16ReadOnly(id16()),
                             name=models.Name(trim(task.get("name", ""))),
                             project_id=models.ProjectId(nt_project_id),
                             author_id=models.Id16ReadOnly(id16()),
@@ -164,9 +164,7 @@ def _import_project_sections(
                             project_section_id=models.Id16Nullable(str(nt_section.id)),
                             project_position=1.0,
                             due_at=parse_timestamp(task.get("due")),
-                            responsible_id=models.Id16Nullable(
-                                nt_member_id if task.get("due") else None
-                            ),
+                            responsible_id=nt_member_id if task.get("due") else None,
                             is_all_day=False,  # trello due at has to be specified with time
                             ended_at=None
                             if not task.get("dueComplete")
@@ -231,7 +229,6 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task):
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    id=models.Id16ReadOnly(id16()),
                     body=comment.get("text"),
                     task_id=models.Id16(nt_task_id),
                     author_id=models.Id16ReadOnly(id16()),

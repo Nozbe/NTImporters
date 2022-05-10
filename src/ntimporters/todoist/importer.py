@@ -8,6 +8,7 @@ from dateutil.parser import isoparse
 from ntimporters.utils import (
     API_HOST,
     ImportException,
+    add_to_project_group,
     check_limits,
     get_projects_per_team,
     get_single_tasks_project_id,
@@ -68,7 +69,6 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
         """Import todoist project"""
         if project.name != "Inbox":
             project_model = models.Project(
-                id=models.Id16ReadOnly(id16()),
                 name=models.NameAllowEmpty(trim(project.name)),
                 team_id=models.Id16(team_id),
                 author_id=models.Id16ReadOnly(id16()),
@@ -83,6 +83,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
 
             if not (nt_project_id := str(nt_project.get("id"))):
                 return
+            add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Todoist")
         else:
             nt_project_id = single_tasks_id
 
@@ -231,7 +232,7 @@ def _import_tasks(
             should_set_tag = True
             responsible_id = nt_members[1]
 
-        return should_set_tag, models.Id16Nullable(responsible_id)
+        return should_set_tag, responsible_id
 
     # get tasks and completed tasks, while completed tasks are fetched from sync api
     for task in todoist_sync_client.completed.get_all(project_id=to_project_id).get("items", []) + [
@@ -242,7 +243,6 @@ def _import_tasks(
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    id=models.Id16ReadOnly(id16()),
                     name=models.Name(trim(task.get("content", ""))),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
@@ -328,7 +328,6 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict):
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    id=models.Id16ReadOnly(id16()),
                     body=comment.content,
                     task_id=models.Id16(nt_task_id),
                     author_id=models.Id16ReadOnly(id16()),
