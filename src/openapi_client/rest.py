@@ -16,6 +16,7 @@ import logging
 import re
 import ssl
 import time
+from os import getenv
 from urllib.parse import urlencode, urlparse
 from urllib.request import proxy_bypass_environment
 
@@ -93,7 +94,7 @@ class RESTClientObject(object):
                 key_file=configuration.key_file,
                 proxy_url=configuration.proxy,
                 proxy_headers=configuration.proxy_headers,
-                **addition_pool_args
+                **addition_pool_args,
             )
         else:
             self.pool_manager = urllib3.PoolManager(
@@ -103,7 +104,7 @@ class RESTClientObject(object):
                 ca_certs=configuration.ssl_ca_cert,
                 cert_file=configuration.cert_file,
                 key_file=configuration.key_file,
-                **addition_pool_args
+                **addition_pool_args,
             )
 
     def request(
@@ -143,6 +144,8 @@ class RESTClientObject(object):
 
         post_params = post_params or {}
         headers = headers or {}
+        if devtoken := getenv("DEV_ACCESS_TOKEN"):
+            headers["X-DevToken"] = devtoken
 
         timeout = None
         if _request_timeout:
