@@ -2,6 +2,7 @@
 import functools
 import json
 import random
+from os import getenv
 from typing import Optional, Tuple
 
 from dateutil.parser import isoparse
@@ -9,7 +10,10 @@ from openapi_client import apis, models
 from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
-API_HOST = "https://api4.nozbe.com/v1/api"
+host = "api4"
+if getenv("DEV_ACCESS_TOKEN"):
+    host = f"dev{host}"
+API_HOST = f"https://{host}.nozbe.com/v1/api"
 # API_HOST = "http://localhost:8888/v1/api"
 
 
