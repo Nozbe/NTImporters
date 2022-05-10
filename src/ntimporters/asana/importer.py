@@ -81,10 +81,9 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
         map_tag_id = {}
         for tag in asana_client.tags.find_by_workspace(workspace["gid"]):
             tag_full = asana_client.tags.find_by_id(tag["gid"])
-            nt_tag_id = post_tag(
+            if nt_tag_id := post_tag(
                 nt_client, tag_full.get("name", ""), _map_color(tag_full.get("color"))
-            )
-            if nt_tag_id:
+            ):
                 map_tag_id[tag["gid"]] = str(nt_tag_id)
 
         # import projects
@@ -158,6 +157,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
             {},
             map_tag_id,
             nt_member_id,
+            is_sap=True,
         )
 
 
@@ -176,6 +176,7 @@ def _import_tasks(
     map_section_id: dict,
     map_tag_id: dict,
     nt_member_id: str,
+    is_sap: bool = False,
 ):
     """Import task from Asana to Nozbe"""
     nt_api_tasks = apis.TasksApi(nt_client)
@@ -201,6 +202,8 @@ def _import_tasks(
             responsible_id = found_responsible
         elif due_at:
             should_set_tag = True
+        if is_sap and responsible_id != nt_member_id:
+            responsible_id = nt_member_id
 
         nt_task = nt_api_tasks.post_task(
             strip_readonly(
@@ -221,7 +224,7 @@ def _import_tasks(
         if not nt_task:
             continue
         nt_task_id = str(nt_task.get("id"))
-        if should_set_tag:
+        if should_set_tag and not is_sap:
             set_unassigned_tag(nt_client, nt_task_id)
 
         # import tag_assignments

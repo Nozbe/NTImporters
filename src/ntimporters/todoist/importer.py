@@ -95,6 +95,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
             project,
             nt_members_by_email(nt_client),
             limits,
+            nt_project_id == single_tasks_id,
         )
 
     todoist_projects = todoist_client.get_projects()
@@ -148,6 +149,7 @@ def _import_project_sections(
     project: dict,
     nt_members: tuple[dict, str],
     limits: dict,
+    is_sap: bool = False,
 ):
     """Import todoist lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
@@ -177,6 +179,7 @@ def _import_project_sections(
         limits,
         nt_project_id,
         project.id,
+        is_sap,
     )
 
 
@@ -189,6 +192,7 @@ def _import_tasks(
     limits: dict,
     nt_project_id: str,
     to_project_id: str,
+    is_sap: bool = False,
 ):
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
@@ -222,6 +226,8 @@ def _import_tasks(
         ):
             if todoist_email := collaborators.get(task.get("assignee")):
                 responsible_id = nt_members[0].get(todoist_email)
+        if is_sap and responsible_id and responsible_id != nt_members[1]:
+            responsible_id = nt_members[1]
         if not responsible_id and task.get("due"):
             should_set_tag = True
             responsible_id = nt_members[1]
@@ -253,7 +259,7 @@ def _import_tasks(
                 )
             )
         ):
-            if should_set_tag:
+            if not is_sap and should_set_tag:
                 set_unassigned_tag(nt_client, nt_task.id)
             _import_comments(nt_client, todoist_client, str(nt_task.id), task)
             _import_tags_assignments(

@@ -57,7 +57,7 @@ class TrelloClient:
 
     def tags(self, project_id: str) -> dict:
         """Get tags related with board"""
-        return [elt for elt in self._req(f"boards/{project_id}/labels") if elt.get("name")]
+        return [elt for elt in self._req(f"boards/{project_id}/labels")]
 
     def tasks(self, section_id: str) -> dict:
         """Get section tasks"""

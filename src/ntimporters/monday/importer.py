@@ -13,6 +13,7 @@ from ntimporters.utils import (
     get_projects_per_team,
     id16,
     nt_limits,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -60,6 +61,8 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
 
     def _import_project(project: dict, curr_member: str):
         """Import monday project"""
+        if project.get("name", "").startswith("Subitems of"):
+            return
         project_model = models.Project(
             name=models.NameAllowEmpty(trim(project.get("name", ""))),
             team_id=models.Id16(team_id),
@@ -105,6 +108,8 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
     )
 
     for project in monday_projects:
+        if project.get("state") in ("archived", "deleted"):
+            continue
         _import_project(project, curr_member)
 
 
@@ -162,6 +167,9 @@ def _import_tasks(
                 )
             )
         ):
+            # TODO responsible_id and below
+            # if task.get("due_at"):
+            #     set_unassigned_tag(nt_client, str(nt_task.id))
             _import_comments(nt_client, monday_client, str(nt_task.id), task.get("id"))
 
 

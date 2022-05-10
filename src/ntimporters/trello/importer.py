@@ -16,6 +16,7 @@ from ntimporters.utils import (
     nt_limits,
     parse_timestamp,
     post_tag,
+    set_unassigned_tag,
     strip_readonly,
     trim,
 )
@@ -172,6 +173,9 @@ def _import_project_sections(
                         )
                     )
                 ):
+                    # TODO set responsible_id and below
+                    # if task.get("due"):
+                    #     set_unassigned_tag(nt_client, str(nt_task.id))
                     _import_tags(nt_client, str(nt_task.id), task, tags_mapping)
                     _import_comments(nt_client, trello_client, str(nt_task.id), task)
                     # TODO import attachments, reminders?
@@ -190,7 +194,7 @@ def _import_tags_per_project(nt_client, trello_client, project: dict, limits: di
         limits, "tags", len(trello_tags := trello_client.tags(project.get("id"))) + len(nt_tags)
     )
     for tag in trello_tags:
-        if (tag_name := tag.get("name")) not in nt_tags and (
+        if (tag_name := (tag.get("name") or "Unnamed")) not in nt_tags and (
             nt_tag_id := post_tag(nt_client, tag_name, tag.get("color"))
         ):
             nt_tags[tag_name] = str(nt_tag_id)
