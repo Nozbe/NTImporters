@@ -84,7 +84,7 @@ class MondayClient:
             subitems = self.subitems(task.get("id"), i + delta + 1)
             delta += len(subitems)
             tasks.extend(subitems)
-        return tasks
+        return reversed(tasks)
 
     def subitems(self, item_id: str, delta) -> list:
         """Get Monday subitems (NT tasks)"""

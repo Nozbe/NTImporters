@@ -160,7 +160,7 @@ def _import_tasks(
                     created_at=models.TimestampReadOnly(1),
                     last_activity_at=models.TimestampReadOnly(1),
                     project_section_id=models.Id16Nullable(sections_mapping.get(task.get("group"))),
-                    project_position=1.0,
+                    project_position=float(task.get("position") or 1.0),
                     due_at=task.get("due_at"),
                     is_all_day=task.get("is_all_day"),
                     responsible_id=author_id if task.get("due_at") else None,
@@ -168,8 +168,8 @@ def _import_tasks(
             )
         ):
             # TODO responsible_id and below
-            # if task.get("due_at"):
-            #     set_unassigned_tag(nt_client, str(nt_task.id))
+            if task.get("due_at"):
+                set_unassigned_tag(nt_client, str(nt_task.id))
             _import_comments(nt_client, monday_client, str(nt_task.id), task.get("id"))
 
 

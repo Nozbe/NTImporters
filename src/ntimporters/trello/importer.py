@@ -139,7 +139,7 @@ def _import_project_sections(
         "project_sections",
         len(trello_sections := trello_client.sections(project.get("id"))),
     )
-    for section in trello_sections:
+    for j, section in enumerate(trello_sections):
         if nt_section := nt_api_sections.post_project_section(
             strip_readonly(
                 models.ProjectSection(
@@ -148,11 +148,11 @@ def _import_project_sections(
                     models.Name(trim(section.get("name", ""))),
                     models.TimestampReadOnly(1),
                     archived_at=models.TimestampNullable(1) if section.get("closed") else None,
-                    position=1.0,
+                    position=float(j),
                 )
             )
         ):
-            for task in trello_client.tasks(section.get("id")):
+            for i, task in enumerate(trello_client.tasks(section.get("id"))):
                 if nt_task := nt_api_tasks.post_task(
                     strip_readonly(
                         models.Task(
@@ -162,7 +162,7 @@ def _import_project_sections(
                             created_at=models.TimestampReadOnly(1),
                             last_activity_at=models.TimestampReadOnly(1),
                             project_section_id=models.Id16Nullable(str(nt_section.id)),
-                            project_position=1.0,
+                            project_position=float(i),
                             due_at=parse_timestamp(task.get("due")),
                             responsible_id=nt_member_id if task.get("due") else None,
                             is_all_day=False,  # trello due at has to be specified with time
@@ -174,8 +174,8 @@ def _import_project_sections(
                     )
                 ):
                     # TODO set responsible_id and below
-                    # if task.get("due"):
-                    #     set_unassigned_tag(nt_client, str(nt_task.id))
+                    if task.get("due"):
+                        set_unassigned_tag(nt_client, str(nt_task.id))
                     _import_tags(nt_client, str(nt_task.id), task, tags_mapping)
                     _import_comments(nt_client, trello_client, str(nt_task.id), task)
                     # TODO import attachments, reminders?
@@ -204,8 +204,11 @@ def _import_tags_per_project(nt_client, trello_client, project: dict, limits: di
 def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
     """Assign tags to task"""
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
+    assigned = []
     for tag in task.get("labels"):
-        if nt_tag_id := tags_mapping.get(tag.get("name")):
+        if nt_tag_id := tags_mapping.get(tag.get("name") or "Unnamed"):
+            if nt_tag_id in assigned:
+                continue
             nt_api_tag_assignments.post_tag_assignment(
                 strip_readonly(
                     models.TagAssignment(
@@ -215,6 +218,7 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
                     )
                 )
             )
+            assigned.append(nt_tag_id)
 
 
 def _import_comments(nt_client, trello_client, nt_task_id: str, task):
@@ -229,7 +233,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task):
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    body=comment.get("text"),
+                    body=comment.get("text") or "...",
                     task_id=models.Id16(nt_task_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),

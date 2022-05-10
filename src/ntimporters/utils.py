@@ -75,8 +75,8 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
 
 
 def set_unassigned_tag(nt_client, task_id: str):
-    """set 'missing responsability' tag"""
-    tag_name, tag_id = "missing responsability", None
+    """set 'missing responsibility' tag"""
+    tag_name, tag_id = "missing responsibility", None
     st_tags = _get_with_query(
         nt_client, apis.TagsApi(nt_client).get_tags_endpoint, [("limit", "1"), ("name", tag_name)]
     )
