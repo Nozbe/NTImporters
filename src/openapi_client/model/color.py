@@ -55,6 +55,14 @@ class Color(ModelSimple):
         ('value',): {
             'None': None,
             'NULL': "null",
+            'ELWIS': "elwis",
+            'FELUS': "felus",
+            'FLUFFY': "fluffy",
+            'LUNA': "luna",
+            'MAJA': "maja",
+            'PEDRO': "pedro",
+            'RUFUS': "rufus",
+            'TOTO': "toto",
             'AQUAMARINE': "aquamarine",
             'AUBERGINE': "aubergine",
             'BLUE': "blue",
@@ -136,10 +144,10 @@ class Color(ModelSimple):
         Note that value can be passed either in args or in kwargs, but not in both.
 
         Args:
-            args[0] (str):, must be one of ["null", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
+            args[0] (str):, must be one of ["null", "elwis", "felus", "fluffy", "luna", "maja", "pedro", "rufus", "toto", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
 
         Keyword Args:
-            value (str):, must be one of ["null", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
+            value (str):, must be one of ["null", "elwis", "felus", "fluffy", "luna", "maja", "pedro", "rufus", "toto", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
             _check_type (bool): if True, values for parameters in openapi_types
                                 will be type checked and a TypeError will be
                                 raised if the wrong type is input.
@@ -226,10 +234,10 @@ class Color(ModelSimple):
         Note that value can be passed either in args or in kwargs, but not in both.
 
         Args:
-            args[0] (str):, must be one of ["null", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
+            args[0] (str):, must be one of ["null", "elwis", "felus", "fluffy", "luna", "maja", "pedro", "rufus", "toto", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
 
         Keyword Args:
-            value (str):, must be one of ["null", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
+            value (str):, must be one of ["null", "elwis", "felus", "fluffy", "luna", "maja", "pedro", "rufus", "toto", "aquamarine", "aubergine", "blue", "brown", "burntsienna", "darkgreen", "deeppurple", "dustpink", "green", "heather", "indigo", "karmin", "lightblue", "lightpink", "mauve", "midnight", "navy", "ocean", "ocher", "olive", "orange", "pink", "purple", "red", "sand", "stone", "taupe", "teal", "ultramarine", "yellow", ]  # noqa: E501
             _check_type (bool): if True, values for parameters in openapi_types
                                 will be type checked and a TypeError will be
                                 raised if the wrong type is input.
