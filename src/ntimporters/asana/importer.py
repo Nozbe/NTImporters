@@ -232,7 +232,7 @@ def _import_tasks(
             nt_api_tag_assignments.post_tag_assignment(
                 strip_readonly(
                     models.TagAssignment(
-                        id=models.Id16(id16()),
+                        id=models.Id16ReadOnly(id16()),
                         tag_id=models.Id16(map_tag_id.get(tag["gid"])),
                         task_id=models.Id16(nt_task_id),
                     )
