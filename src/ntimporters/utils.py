@@ -44,9 +44,13 @@ def nt_open_projects_len(nt_client, team_id: str):
         [
             True
             for elt in get_projects_per_team(nt_client, team_id)
-            if (
-                elt.get("is_open")
-                and (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at")))
+            if all(
+                (
+                    elt.get("is_open"),
+                    (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at"))),
+                    not elt.get("is_template"),
+                    not elt.get("is_single_actions"),
+                )
             )
         ]
     )
@@ -147,7 +151,7 @@ def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
         project
         for project in nt_project_api.get_projects(
             limit=10000,
-            fields="id,name,author_id,created_at,last_event_at,ended_at,team_id,is_open",
+            fields="id,name,author_id,created_at,last_event_at,ended_at,team_id,is_open,is_single_actions",
         )
         if str(project.team_id) == team_id
     ]
