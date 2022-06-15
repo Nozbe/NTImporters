@@ -5,15 +5,16 @@ import random
 from os import getenv
 from typing import Optional, Tuple
 
+import requests
 from dateutil.parser import isoparse
 from openapi_client import apis, models
 from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
-host = "api4"
+HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
-    host = f"dev{host}"
-API_HOST = f"https://{host}.nozbe.com/v1/api"
+    HOST = f"dev{HOST}"
+API_HOST = f"https://{HOST}.nozbe.com/v1/api"
 # API_HOST = "http://localhost:8888/v1/api"
 
 
@@ -26,11 +27,39 @@ class ImportException(Exception):
     """Importer exception"""
 
 
-def check_limits(limits: dict, limit_name: str, current_len: int):
+def subscribe_trial(api_key: str, nt_team_id: str, members_len: int = None) -> bool:
+    """Return True if trial has been subscribed"""
+    if resp := requests.patch(
+        "/".join((API_HOST.removesuffix("/api"), nt_team_id, "plan")),
+        json={"members_len": members_len, "plan_type": "trial"},
+        headers={"Authorization": f"Apikey {api_key}"},
+    ):
+        return resp == 200
+    return False
+
+
+def nt_open_projects_len(nt_client, team_id: str):
+    """Return number of open projects"""
+    return sum(
+        [
+            True
+            for elt in get_projects_per_team(nt_client, team_id)
+            if (
+                elt.get("is_open")
+                and (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at")))
+            )
+        ]
+    )
+
+
+def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
+    limits = nt_limits(nt_client, nt_team_id)
     if "localhost" in API_HOST:
         return
-    if current_len > (limit := limits.get(limit_name, 0)) > -1:
+    if current_len > (limit := limits.get(limit_name, 0)) > -1 and not subscribe_trial(
+        api_key, nt_team_id
+    ):
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
 

@@ -10,9 +10,8 @@ from ntimporters.utils import (
     add_to_project_group,
     check_limits,
     current_nt_member,
-    get_projects_per_team,
     id16,
-    nt_limits,
+    nt_open_projects_len,
     set_unassigned_tag,
     strip_readonly,
     trim,
@@ -46,6 +45,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
             ),
             MondayClient(app_key),
             team_id,
+            nt_auth_token,
         )
 
     except (ImportException, OpenApiException) as exc:
@@ -53,9 +53,8 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
     return None
 
 
-def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
+def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_token: str):
     """Import everything from monday to Nozbe"""
-    limits = nt_limits(nt_client, team_id)
     projects_api = apis.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)
 
@@ -83,28 +82,19 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
         add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Monday")
 
         _import_project_sections(
-            nt_client, monday_client, nt_project_id, project, limits, curr_member
+            nt_client, monday_client, nt_project_id, project, curr_member, team_id, nt_auth_token
         )
 
     monday_projects = monday_client.projects()
     monday_projects_open = [
         elt.get("id") for elt in monday_projects if elt.get("board_kind") == "public"
     ]
-    nt_projects = get_projects_per_team(nt_client, team_id)
     check_limits(
-        limits,
+        nt_auth_token,
+        team_id,
+        nt_client,
         "projects_open",
-        len(monday_projects_open)
-        + sum(
-            [
-                True
-                for elt in nt_projects
-                if (
-                    elt.get("is_open")
-                    and (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at")))
-                )
-            ]
-        ),
+        len(monday_projects_open) + nt_open_projects_len(nt_client, team_id),
     )
 
     for project in monday_projects:
@@ -115,13 +105,21 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str):
 
 # pylint: disable=too-many-arguments
 def _import_project_sections(
-    nt_client, monday_client, nt_project_id, project, limits: dict, curr_member: str
+    nt_client,
+    monday_client,
+    nt_project_id,
+    project,
+    curr_member: str,
+    team_id: str,
+    nt_auth_token: str,
 ):
     """Import monday lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
 
     check_limits(
-        limits,
+        nt_auth_token,
+        team_id,
+        nt_client,
         "project_sections",
         len(monday_sections := monday_client.sections(project.get("id"))),
     )

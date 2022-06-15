@@ -10,11 +10,10 @@ from ntimporters.utils import (
     ImportException,
     add_to_project_group,
     check_limits,
-    get_projects_per_team,
     get_single_tasks_project_id,
     id16,
-    nt_limits,
     nt_members_by_email,
+    nt_open_projects_len,
     post_tag,
     set_unassigned_tag,
     strip_readonly,
@@ -52,6 +51,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
             TodoistAPI(auth_token),
             TodoistAPISync(auth_token),
             team_id,
+            nt_auth_token,
         )
 
     except (ImportException, OpenApiException) as exc:
@@ -59,9 +59,10 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
     return None
 
 
-def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, team_id: str):
+def _import_data(
+    nt_client: nt.ApiClient, todoist_client, todoist_sync_client, team_id: str, nt_auth_token: str
+):
     """Import everything from todoist to Nozbe"""
-    limits = nt_limits(nt_client, team_id)
     nt_project_api = apis.ProjectsApi(nt_client)
     single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
 
@@ -94,33 +95,27 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, todoist_sync_client, t
             nt_project_id,
             project,
             nt_members_by_email(nt_client),
-            limits,
-            nt_project_id == single_tasks_id,
+            team_id,
+            nt_auth_token,
+            is_sap=nt_project_id == single_tasks_id,
         )
 
     todoist_projects = todoist_client.get_projects()
-    nt_projects = get_projects_per_team(nt_client, team_id)
     check_limits(
-        limits,
+        nt_auth_token,
+        team_id,
+        nt_client,
         "projects_open",
-        len(todoist_projects)
-        + sum(
-            [
-                True
-                for elt in nt_projects
-                if (
-                    elt.get("is_open")
-                    and (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at")))
-                )
-            ]
-        ),
+        len(todoist_projects) + nt_open_projects_len(nt_client, team_id),
     )
-    _import_members(nt_client, todoist_client, todoist_projects, limits)
+    _import_members(nt_client, todoist_client, todoist_projects, team_id, nt_auth_token)
     for project in todoist_projects:
         _import_project(project)
 
 
-def _import_members(nt_client, todoist_client, todoist_projects: list, limits):
+def _import_members(
+    nt_client, todoist_client, todoist_projects: list, team_id: str, nt_auth_token: str
+):
     """Import members into Nozbe"""
     return  # TODO
     nt_team_members_api = apis.TeamMembersApi(nt_client)
@@ -132,8 +127,12 @@ def _import_members(nt_client, todoist_client, todoist_projects: list, limits):
         uniq_emails.update(todoist_members(todoist_client, project.id).values())
     uniq_emails -= set(nt_members_by_email(nt_client)[0])
     print(f"would import {uniq_emails=}")
-    # TODO needs change on NT backend
-    # check_limits(limits, "team_members", active_nt_members + len(uniq_emails))
+    # TODO
+    # check_limits(
+    # nt_auth_token,
+    # team_id,
+    # nt_client,
+    # "team_members", active_nt_members + len(uniq_emails))
     # for email in uniq_emails:
     #     if nt_user := apis.UsersApi(nt_client).post_user(user_model):
     #         user_id = nt_user.get("id")
@@ -148,7 +147,8 @@ def _import_project_sections(
     nt_project_id: str,
     project: dict,
     nt_members: tuple[dict, str],
-    limits: dict,
+    team_id: str,
+    nt_auth_token: str,
     is_sap: bool = False,
 ):
     """Import todoist lists as project sections"""
@@ -176,9 +176,10 @@ def _import_project_sections(
         todoist_sync_client,
         mapping,
         nt_members,
-        limits,
         nt_project_id,
         project.id,
+        team_id,
+        nt_auth_token,
         is_sap,
     )
 
@@ -189,14 +190,15 @@ def _import_tasks(
     todoist_sync_client,
     sections_mapping: dict,
     nt_members: dict,
-    limits: dict,
     nt_project_id: str,
     to_project_id: str,
+    team_id,
+    nt_auth_token,
     is_sap: bool = False,
 ):
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
-    tags_mapping = _import_tags(nt_client, todoist_client, limits)
+    tags_mapping = _import_tags(nt_client, todoist_client, team_id, nt_auth_token)
 
     def _parse_timestamp(todoist_date) -> Optional[models.TimestampNullable]:
         """Parses todoist timestamp into NT timestamp format"""
@@ -291,13 +293,19 @@ def _import_tags_assignments(
             )
 
 
-def _import_tags(nt_client, todoist_client, limits) -> dict:
+def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) -> dict:
     """Import todoist tags and return name -> NT tag id mapping"""
     nt_api_tags = apis.TagsApi(nt_client)
     nt_tags = {
         str(elt.get("name")): str(elt.get("id")) for elt in nt_api_tags.get_tags(fields="id,name")
     }
-    check_limits(limits, "tags", len(todoist_tags := todoist_client.get_labels()) + len(nt_tags))
+    check_limits(
+        nt_auth_token,
+        team_id,
+        nt_client,
+        "tags",
+        len(todoist_tags := todoist_client.get_labels()) + len(nt_tags),
+    )
     mapping = {}
     for tag in todoist_tags:
         if (tag_name := str(tag.name)) not in nt_tags and (
@@ -311,6 +319,8 @@ def _import_tags(nt_client, todoist_client, limits) -> dict:
 
 @dataclass
 class Comment:
+    """Fake Todoist comment class"""
+
     content: str
 
 
