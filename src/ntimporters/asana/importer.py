@@ -77,7 +77,8 @@ def _asana_projects_len(asana_client: asana.Client) -> int:
     """Get number of asana projects"""
     total = 0
     for workspace in asana_client.workspaces.find_all(full_payload=True):
-        total += len(asana_client.projects.find_by_workspace(workspace["gid"]))
+        total += len(list(asana_client.projects.find_by_workspace(workspace["gid"])))
+
     return total
 
 

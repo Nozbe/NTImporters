@@ -15,7 +15,6 @@ HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = f"https://{HOST}.nozbe.com/v1/api"
-# API_HOST = "http://localhost:8888/v1/api"
 
 
 def id16():
@@ -30,11 +29,11 @@ class ImportException(Exception):
 def subscribe_trial(api_key: str, nt_team_id: str, members_len: int = None) -> bool:
     """Return True if trial has been subscribed"""
     if resp := requests.patch(
-        "/".join((API_HOST.removesuffix("/api"), nt_team_id, "plan")),
-        json={"members_len": members_len, "plan_type": "trial"},
-        headers={"Authorization": f"Apikey {api_key}"},
+        "/".join((API_HOST.removesuffix("/api"), "teams", nt_team_id, "plan")),
+        json={"members_len": members_len, "plan_type": "trial", "is_recurring": False, "creds": 0},
+        headers={"Authorization": f"Apikey {api_key}", "API-Version": "current"},
     ):
-        return resp == 200
+        return resp.status_code == 200
     return False
 
 
@@ -58,9 +57,9 @@ def nt_open_projects_len(nt_client, team_id: str):
 
 def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
-    limits = nt_limits(nt_client, nt_team_id)
     if "localhost" in API_HOST:
         return
+    limits = nt_limits(nt_client, nt_team_id)
     if current_len > (limit := limits.get(limit_name, 0)) > -1 and not subscribe_trial(
         api_key, nt_team_id
     ):
