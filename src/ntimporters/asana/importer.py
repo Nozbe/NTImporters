@@ -6,10 +6,12 @@ import openapi_client as nt
 from ntimporters.utils import (
     API_HOST,
     add_to_project_group,
+    check_limits,
     current_nt_member,
     get_single_tasks_project_id,
     id16,
     nt_members_by_email,
+    nt_open_projects_len,
     parse_timestamp,
     post_tag,
     set_unassigned_tag,
@@ -65,16 +67,35 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
     )
     asana_client = asana.Client.access_token(auth_token)
     try:
-        _import_data(nt_client, asana_client, team_id)
+        _import_data(nt_client, asana_client, team_id, nt_auth_token)
     except (AsanaError, OpenApiException) as exc:
         return exc
+    return None
 
 
-def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: str):
+def _asana_projects_len(asana_client: asana.Client) -> int:
+    """Get number of asana projects"""
+    total = 0
+    for workspace in asana_client.workspaces.find_all(full_payload=True):
+        total += len(list(asana_client.projects.find_by_workspace(workspace["gid"])))
+
+    return total
+
+
+def _import_data(
+    nt_client: nt.ApiClient, asana_client: asana.Client, team_id: str, nt_auth_token: str
+):
     """Import everything from Asana to Nozbe"""
     nt_api_projects = apis.ProjectsApi(nt_client)
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_member_id = current_nt_member(nt_client)
+    check_limits(
+        nt_auth_token,
+        team_id,
+        nt_client,
+        "projects_open",
+        _asana_projects_len(asana_client) + nt_open_projects_len(nt_client, team_id),
+    )
 
     for workspace in asana_client.workspaces.find_all(full_payload=True):
         # import tags
@@ -113,6 +134,7 @@ def _import_data(nt_client: nt.ApiClient, asana_client: asana.Client, team_id: s
 
             # import project sections
             map_section_id = {}
+            # TODO sections limit
             for position, section in enumerate(
                 asana_client.sections.find_by_project(project["gid"])
             ):

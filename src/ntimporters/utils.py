@@ -5,16 +5,16 @@ import random
 from os import getenv
 from typing import Optional, Tuple
 
+import requests
 from dateutil.parser import isoparse
 from openapi_client import apis, models
 from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
-host = "api4"
+HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
-    host = f"dev{host}"
-API_HOST = f"https://{host}.nozbe.com/v1/api"
-# API_HOST = "http://localhost:8888/v1/api"
+    HOST = f"dev{HOST}"
+API_HOST = f"https://{HOST}.nozbe.com/v1/api"
 
 
 def id16():
@@ -26,11 +26,43 @@ class ImportException(Exception):
     """Importer exception"""
 
 
-def check_limits(limits: dict, limit_name: str, current_len: int):
+def subscribe_trial(api_key: str, nt_team_id: str, members_len: int = None) -> bool:
+    """Return True if trial has been subscribed"""
+    if resp := requests.patch(
+        "/".join((API_HOST.removesuffix("/api"), "teams", nt_team_id, "plan")),
+        json={"members_len": members_len, "plan_type": "trial", "is_recurring": False, "creds": 0},
+        headers={"Authorization": f"Apikey {api_key}", "API-Version": "current"},
+    ):
+        return resp.status_code == 200
+    return False
+
+
+def nt_open_projects_len(nt_client, team_id: str):
+    """Return number of open projects"""
+    return sum(
+        [
+            True
+            for elt in get_projects_per_team(nt_client, team_id)
+            if all(
+                (
+                    elt.get("is_open"),
+                    (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at"))),
+                    not elt.get("is_template"),
+                    not elt.get("is_single_actions"),
+                )
+            )
+        ]
+    )
+
+
+def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, current_len: int):
     """Raise an exception if limits exceeded"""
     if "localhost" in API_HOST:
         return
-    if current_len > (limit := limits.get(limit_name, 0)) > -1:
+    limits = nt_limits(nt_client, nt_team_id)
+    if current_len > (limit := limits.get(limit_name, 0)) > -1 and not subscribe_trial(
+        api_key, nt_team_id
+    ):
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
 
@@ -118,7 +150,7 @@ def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
         project
         for project in nt_project_api.get_projects(
             limit=10000,
-            fields="id,name,author_id,created_at,last_event_at,ended_at,team_id,is_open",
+            fields="id,name,author_id,created_at,last_event_at,ended_at,team_id,is_open,is_single_actions",
         )
         if str(project.team_id) == team_id
     ]
