@@ -211,8 +211,8 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
 def trim(name: str):
     """Return max 255 characters"""
     if isinstance(name, str):
-        return name[:255]
-    return name
+        return name[:255] or "Untitled"
+    return name or "Untitled"
 
 
 def parse_timestamp(datetime: Optional[str]) -> Optional[models.TimestampNullable]:
