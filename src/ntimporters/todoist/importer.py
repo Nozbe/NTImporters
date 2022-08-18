@@ -7,7 +7,6 @@ import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.utils import (
     API_HOST,
-    ImportException,
     add_to_project_group,
     check_limits,
     get_single_tasks_project_id,
@@ -20,7 +19,6 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
-from openapi_client.exceptions import OpenApiException
 from todoist_api_python.api import TodoistAPI
 
 from todoist import TodoistAPI as TodoistAPISync
@@ -54,7 +52,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
             nt_auth_token,
         )
 
-    except (ImportException, OpenApiException) as exc:
+    except Exception as exc:
         return exc
     return None
 
