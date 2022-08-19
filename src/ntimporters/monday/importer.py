@@ -6,7 +6,6 @@ from dateutil.parser import isoparse
 from ntimporters.monday.monday_api import MondayClient
 from ntimporters.utils import (
     API_HOST,
-    ImportException,
     add_to_project_group,
     check_limits,
     current_nt_member,
@@ -17,7 +16,6 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
-from openapi_client.exceptions import OpenApiException
 
 SPEC = {
     "code": "monday",  # codename / ID of importer
@@ -48,7 +46,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
             nt_auth_token,
         )
 
-    except (ImportException, OpenApiException) as exc:
+    except Exception as exc:
         return exc
     return None
 

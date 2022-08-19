@@ -19,7 +19,6 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
-from openapi_client.exceptions import OpenApiException
 
 import asana
 from asana.error import AsanaError
@@ -68,7 +67,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
     asana_client = asana.Client.access_token(auth_token)
     try:
         _import_data(nt_client, asana_client, team_id, nt_auth_token)
-    except (AsanaError, OpenApiException) as exc:
+    except Exception as exc:
         return exc
     return None
 

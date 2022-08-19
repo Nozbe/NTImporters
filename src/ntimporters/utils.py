@@ -86,7 +86,7 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
     st_groups = _get_with_query(
         nt_client,
         apis.ProjectGroupsApi(nt_client).get_project_groups_endpoint,
-        [("limit", "1"), ("name", group_name)],
+        [("limit", "1"), ("name", group_name), ("team_id", team_id)],
     )
     group_id = st_groups[0].get("id") if st_groups and st_groups[0] else None
     if not group_id and (
