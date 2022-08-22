@@ -65,9 +65,8 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
             access_token=nt_auth_token,
         )
     )
-    asana_client = asana.Client.access_token(auth_token)
-    _import_data(nt_client, asana_client, team_id, nt_auth_token)
     try:
+        asana_client = asana.Client.access_token(auth_token)
         _import_data(nt_client, asana_client, team_id, nt_auth_token)
     except Exception as exc:
         return exc
