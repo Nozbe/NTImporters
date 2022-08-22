@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 import requests
 from dateutil.parser import isoparse
 from openapi_client import apis, models
+from openapi_client.exceptions import OpenApiException
 from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
@@ -89,25 +90,28 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
         [("limit", "1"), ("name", group_name), ("team_id", team_id)],
     )
     group_id = st_groups[0].get("id") if st_groups and st_groups[0] else None
-    if not group_id and (
-        group := apis.ProjectGroupsApi(nt_client).post_project_group(
-            strip_readonly(
-                models.ProjectGroup(
-                    name=models.Name(group_name), team_id=models.Id16(team_id), is_private=True
+    try:
+        if not group_id and (
+            group := apis.ProjectGroupsApi(nt_client).post_project_group(
+                strip_readonly(
+                    models.ProjectGroup(
+                        name=models.Name(group_name), team_id=models.Id16(team_id), is_private=True
+                    )
                 )
             )
-        )
-    ):
-        group_id = group.get("id")
-    if group_id:
-        assignment = strip_readonly(
-            models.GroupAssignment(
-                object_id=models.Id16(str(project_id)),
-                group_id=models.Id16(str(group_id)),
-                group_type="project",
+        ):
+            group_id = group.get("id")
+        if group_id:
+            assignment = strip_readonly(
+                models.GroupAssignment(
+                    object_id=models.Id16(str(project_id)),
+                    group_id=models.Id16(str(group_id)),
+                    group_type="project",
+                )
             )
-        )
-        apis.GroupAssignmentsApi(nt_client).post_group_assignment(assignment)
+            apis.GroupAssignmentsApi(nt_client).post_group_assignment(assignment)
+    except OpenApiException:
+        pass
 
 
 def set_unassigned_tag(nt_client, task_id: str):
