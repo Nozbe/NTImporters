@@ -57,15 +57,14 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
         return "Missing 'nt_auth_token'"
     if not auth_token:
         return "Missing 'auth_token'"
-
-    nt_client = nt.ApiClient(
-        configuration=nt.Configuration(
-            host=API_HOST,
-            api_key={"ApiKeyAuth": nt_auth_token},
-            access_token=nt_auth_token,
-        )
-    )
     try:
+        nt_client = nt.ApiClient(
+            configuration=nt.Configuration(
+                host=API_HOST,
+                api_key={"ApiKeyAuth": nt_auth_token},
+                access_token=nt_auth_token,
+            )
+        )
         asana_client = asana.Client.access_token(auth_token)
         _import_data(nt_client, asana_client, team_id, nt_auth_token)
     except Exception as exc:
