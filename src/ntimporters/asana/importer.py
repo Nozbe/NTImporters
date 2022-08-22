@@ -19,6 +19,7 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
+from openapi_client.exceptions import OpenApiException
 
 import asana
 from asana.error import AsanaError
@@ -65,6 +66,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
         )
     )
     asana_client = asana.Client.access_token(auth_token)
+    _import_data(nt_client, asana_client, team_id, nt_auth_token)
     try:
         _import_data(nt_client, asana_client, team_id, nt_auth_token)
     except Exception as exc:
@@ -133,29 +135,31 @@ def _import_data(
 
             # import project sections
             map_section_id = {}
-            # TODO sections limit
             for position, section in enumerate(
                 asana_client.sections.find_by_project(project["gid"])
             ):
                 section_full = asana_client.sections.find_by_id(section["gid"])
                 if section_full.get("name") == "Untitled section":
                     continue
-                nt_section = nt_api_sections.post_project_section(
-                    strip_readonly(
-                        models.ProjectSection(
-                            id=models.Id16ReadOnly(id16()),
-                            project_id=models.Id16(nt_project_id),
-                            name=models.Name(trim(section_full.get("name", ""))),
-                            created_at=models.TimestampReadOnly(1),
-                            archived_at=models.TimestampNullable(1)
-                            if section_full.get("archived")
-                            else None,
-                            position=float(position),
+                try:
+                    nt_section = nt_api_sections.post_project_section(
+                        strip_readonly(
+                            models.ProjectSection(
+                                id=models.Id16ReadOnly(id16()),
+                                project_id=models.Id16(nt_project_id),
+                                name=models.Name(trim(section_full.get("name", ""))),
+                                created_at=models.TimestampReadOnly(1),
+                                archived_at=models.TimestampNullable(1)
+                                if section_full.get("archived")
+                                else None,
+                                position=float(position),
+                            )
                         )
                     )
-                )
-                if nt_section:
-                    map_section_id[section["gid"]] = str(nt_section.get("id"))
+                    if nt_section:
+                        map_section_id[section["gid"]] = str(nt_section.get("id"))
+                except OpenApiException:
+                    pass
 
             # import project tasks
             _import_tasks(

@@ -19,6 +19,7 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
+from openapi_client.exceptions import OpenApiException
 
 SPEC = {
     "code": "trello",  # codename / ID of importer
@@ -125,52 +126,58 @@ def _import_project_sections(
         len(trello_sections := trello_client.sections(project.get("id"))),
     )
     for j, section in enumerate(trello_sections):
-        if nt_section := nt_api_sections.post_project_section(
-            strip_readonly(
-                models.ProjectSection(
-                    models.Id16ReadOnly(id16()),
-                    models.Id16(nt_project_id),
-                    models.Name(trim(section.get("name", ""))),
-                    models.TimestampReadOnly(1),
-                    archived_at=models.TimestampNullable(1) if section.get("closed") else None,
-                    position=float(j),
+        nt_section_id = None
+        try:
+            if nt_section := nt_api_sections.post_project_section(
+                strip_readonly(
+                    models.ProjectSection(
+                        models.Id16ReadOnly(id16()),
+                        models.Id16(nt_project_id),
+                        models.Name(trim(section.get("name", ""))),
+                        models.TimestampReadOnly(1),
+                        archived_at=models.TimestampNullable(1) if section.get("closed") else None,
+                        position=float(j),
+                    )
                 )
-            )
-        ):
-            for i, task in enumerate(trello_client.tasks(section.get("id"))):
-                if nt_task := nt_api_tasks.post_task(
-                    strip_readonly(
-                        models.Task(
-                            name=models.Name(trim(task.get("name", ""))),
-                            project_id=models.ProjectId(nt_project_id),
-                            author_id=models.Id16ReadOnly(id16()),
-                            created_at=models.TimestampReadOnly(1),
-                            last_activity_at=models.TimestampReadOnly(1),
-                            project_section_id=models.Id16Nullable(str(nt_section.id)),
-                            project_position=float(i),
-                            due_at=parse_timestamp(task.get("due")),
-                            responsible_id=nt_member_id if task.get("due") else None,
-                            is_all_day=False,  # trello due at has to be specified with time
-                            ended_at=None
-                            if not task.get("dueComplete")
-                            else parse_timestamp(task.get("due")),
-                            # there is no ended_at time @ trello
-                        )
+            ):
+                nt_section_id = nt_section.id
+        except OpenApiException:
+            pass
+
+        for i, task in enumerate(trello_client.tasks(section.get("id"))):
+            if nt_task := nt_api_tasks.post_task(
+                strip_readonly(
+                    models.Task(
+                        name=models.Name(trim(task.get("name", ""))),
+                        project_id=models.ProjectId(nt_project_id),
+                        author_id=models.Id16ReadOnly(id16()),
+                        created_at=models.TimestampReadOnly(1),
+                        last_activity_at=models.TimestampReadOnly(1),
+                        project_section_id=models.Id16Nullable(str(nt_section_id)),
+                        project_position=float(i),
+                        due_at=parse_timestamp(task.get("due")),
+                        responsible_id=nt_member_id if task.get("due") else None,
+                        is_all_day=False,  # trello due at has to be specified with time
+                        ended_at=None
+                        if not task.get("dueComplete")
+                        else parse_timestamp(task.get("due")),
+                        # there is no ended_at time @ trello
                     )
-                ):
-                    # TODO set responsible_id and below
-                    if task.get("due"):
-                        set_unassigned_tag(nt_client, str(nt_task.id))
-                    _import_tags(
-                        nt_client,
-                        str(nt_task.id),
-                        task,
-                        _import_tags_per_project(
-                            nt_client, trello_client, project, team_id, nt_auth_token
-                        ),
-                    )
-                    _import_comments(nt_client, trello_client, str(nt_task.id), task)
-                    # TODO import attachments, reminders?
+                )
+            ):
+                # TODO set responsible_id and below
+                if task.get("due"):
+                    set_unassigned_tag(nt_client, str(nt_task.id))
+                _import_tags(
+                    nt_client,
+                    str(nt_task.id),
+                    task,
+                    _import_tags_per_project(
+                        nt_client, trello_client, project, team_id, nt_auth_token
+                    ),
+                )
+                _import_comments(nt_client, trello_client, str(nt_task.id), task)
+                # TODO import attachments, reminders?
 
 
 # pylint: enable=too-many-arguments

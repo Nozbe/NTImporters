@@ -110,7 +110,7 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
                 )
             )
             apis.GroupAssignmentsApi(nt_client).post_group_assignment(assignment)
-    except OpenApiException:
+    except Exception:
         pass
 
 

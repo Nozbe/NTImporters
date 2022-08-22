@@ -19,6 +19,7 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
+from openapi_client.exceptions import OpenApiException
 from todoist_api_python.api import TodoistAPI
 
 from todoist import TodoistAPI as TodoistAPISync
@@ -156,18 +157,21 @@ def _import_project_sections(
     mapping = {}
     if project.name != "Inbox":
         for section in todoist_client.get_sections(project_id=project.id):
-            if nt_section := nt_api_sections.post_project_section(
-                strip_readonly(
-                    models.ProjectSection(
-                        models.Id16ReadOnly(id16()),
-                        models.Id16(nt_project_id),
-                        models.Name(trim(section.name)),
-                        models.TimestampReadOnly(1),
-                        position=float(section.order),
+            try:
+                if nt_section := nt_api_sections.post_project_section(
+                    strip_readonly(
+                        models.ProjectSection(
+                            models.Id16ReadOnly(id16()),
+                            models.Id16(nt_project_id),
+                            models.Name(trim(section.name)),
+                            models.TimestampReadOnly(1),
+                            position=float(section.order),
+                        )
                     )
-                )
-            ):
-                mapping[section.id] = str(nt_section.get("id"))
+                ):
+                    mapping[section.id] = str(nt_section.get("id"))
+            except OpenApiException:
+                pass
     _import_tasks(
         nt_client,
         todoist_client,
