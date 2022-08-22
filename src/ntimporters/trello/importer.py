@@ -6,7 +6,6 @@ from dateutil.parser import isoparse
 from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
     API_HOST,
-    ImportException,
     add_to_project_group,
     check_limits,
     current_nt_member,
@@ -20,7 +19,6 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
-from openapi_client.exceptions import OpenApiException
 
 SPEC = {
     "code": "trello",  # codename / ID of importer
@@ -54,7 +52,7 @@ def run_import(
             nt_auth_token,
         )
 
-    except (ImportException, OpenApiException) as exc:
+    except Exception as exc:
         return exc
     return None
 
@@ -99,7 +97,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
     for project in trello_projects:
         try:
             _import_project(project, curr_member)
-        except ImportException as error:
+        except Exception as error:
             return error
     return None
 
