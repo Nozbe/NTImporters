@@ -16,6 +16,7 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import apis, models
+from openapi_client.exceptions import OpenApiException
 
 SPEC = {
     "code": "monday",  # codename / ID of importer
@@ -123,19 +124,24 @@ def _import_project_sections(
     )
     sections_mapping = {}
     for section in monday_sections:
-        if nt_section := nt_api_sections.post_project_section(
-            strip_readonly(
-                models.ProjectSection(
-                    models.Id16ReadOnly(id16()),
-                    models.Id16(nt_project_id),
-                    models.Name(trim(section.get("title", ""))),
-                    models.TimestampReadOnly(1),
-                    archived_at=models.TimestampReadOnly(1) if section.get("archived") else None,
-                    position=float(section.get("position") or 1.0),
+        try:
+            if nt_section := nt_api_sections.post_project_section(
+                strip_readonly(
+                    models.ProjectSection(
+                        models.Id16ReadOnly(id16()),
+                        models.Id16(nt_project_id),
+                        models.Name(trim(section.get("title", ""))),
+                        models.TimestampReadOnly(1),
+                        archived_at=models.TimestampReadOnly(1)
+                        if section.get("archived")
+                        else None,
+                        position=float(section.get("position") or 1.0),
+                    )
                 )
-            )
-        ):
-            sections_mapping[section.get("id")] = str(nt_section.get("id"))
+            ):
+                sections_mapping[section.get("id")] = str(nt_section.get("id"))
+        except OpenApiException:
+            pass
     _import_tasks(
         nt_client, monday_client, sections_mapping, project.get("id"), nt_project_id, curr_member
     )
