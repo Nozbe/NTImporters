@@ -68,6 +68,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
         asana_client = asana.Client.access_token(auth_token)
         _import_data(nt_client, asana_client, team_id, nt_auth_token)
     except Exception as exc:
+        print("OOO", exc)
         return exc
     return None
 
@@ -88,6 +89,7 @@ def _import_data(
     nt_api_projects = apis.ProjectsApi(nt_client)
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_member_id = current_nt_member(nt_client)
+    print(nt_api_projects, nt_api_sections, nt_member_id)
     check_limits(
         nt_auth_token,
         team_id,
@@ -268,7 +270,7 @@ def _import_tasks(
             nt_api_comments.post_comment(
                 strip_readonly(
                     models.Comment(
-                        body=body,
+                        body=body or "…",
                         task_id=models.Id16(task_id),
                         author_id=models.Id16ReadOnly(id16()),
                         created_at=models.TimestampReadOnly(1),

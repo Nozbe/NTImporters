@@ -238,7 +238,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task):
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    body=comment.get("text") or "...",
+                    body=comment.get("text") or "…",
                     task_id=models.Id16(nt_task_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
