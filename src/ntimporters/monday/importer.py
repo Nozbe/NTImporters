@@ -188,7 +188,7 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str)
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    body=comment.get("text_body"),
+                    body=comment.get("text_body") or "…",
                     task_id=models.Id16(nt_task_id),
                     created_at=models.TimestampReadOnly(1),
                     author_id=models.Id16ReadOnly(id16()),

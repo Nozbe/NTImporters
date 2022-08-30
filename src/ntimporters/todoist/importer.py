@@ -340,7 +340,7 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict):
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    body=comment.content,
+                    body=comment.content or "…",
                     task_id=models.Id16(nt_task_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),

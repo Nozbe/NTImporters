@@ -268,7 +268,7 @@ def _import_tasks(
             nt_api_comments.post_comment(
                 strip_readonly(
                     models.Comment(
-                        body=body,
+                        body=body or "…",
                         task_id=models.Id16(task_id),
                         author_id=models.Id16ReadOnly(id16()),
                         created_at=models.TimestampReadOnly(1),
