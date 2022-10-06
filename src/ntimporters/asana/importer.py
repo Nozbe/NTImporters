@@ -88,6 +88,7 @@ def _import_data(
     nt_api_projects = apis.ProjectsApi(nt_client)
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_member_id = current_nt_member(nt_client)
+
     check_limits(
         nt_auth_token,
         team_id,
@@ -207,13 +208,17 @@ def _import_tasks(
     nt_api_comments = apis.CommentsApi(nt_client)
     _, nt_member_id = nt_members_by_email(nt_client)
     user_matches = match_nt_users(
-        nt_client, [elt.get("email") for elt in asana_client.users.find_all(opt_fields="email")]
+        nt_client, [elt.get("email") for elt in asana_users(asana_client)]
     )
 
     def _get_responsible_id(assignee: dict):
         """Get Nozbe author_id given asana's user"""
-        if assignee and (gid := assignee.get("gid")):
-            return user_matches.get(_get_asana_email_by_gid(asana_client, gid))
+        if (
+            assignee
+            and (gid := assignee.get("gid"))
+            and (email := _get_asana_email_by_gid(asana_client, gid))
+        ):
+            return user_matches.get(email.lower())
         return None
 
     for task in asana_tasks:
@@ -312,3 +317,15 @@ def _map_section_id(asana_task: dict, map_section_id: dict) -> models.Id16Nullab
         return None
     asana_section = asana_task.get("memberships")[0].get("section")
     return models.Id16Nullable(asana_section and map_section_id.get(asana_section.get("gid")))
+
+
+def asana_users(asana_client):
+    """Get asana users from all workspaces"""
+    users = []
+
+    for workspace in asana_client.workspaces.find_all(full_payload=False):
+        users += list(
+            asana_client.users.find_by_workspace(workspace.get("gid"), opt_fields="email")
+        )
+    # gid,email
+    return users
