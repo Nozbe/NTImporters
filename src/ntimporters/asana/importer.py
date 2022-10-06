@@ -207,7 +207,7 @@ def _import_tasks(
     nt_api_comments = apis.CommentsApi(nt_client)
     _, nt_member_id = nt_members_by_email(nt_client)
     user_matches = match_nt_users(
-        nt_client, [elt.get("email") for elt in asana_client.users.get_users(opt_fields="email")]
+        nt_client, [elt.get("email") for elt in asana_client.users.find_all(opt_fields="email")]
     )
 
     def _get_responsible_id(assignee: dict):
