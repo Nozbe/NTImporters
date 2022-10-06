@@ -70,6 +70,11 @@ class MondayClient:
         for i, task in enumerate(
             self._req(query).get("data", {}).get("boards", [{}])[0].get("items", [])
         ):
+            assigned = []
+            for col in task.get("column_values"):
+                if col and col.get("type") == "multiple-person" and col.get("value"):
+                    assigned = json.loads(col.get("value", "{}")).get("personsAndTeams") or []
+                    break
             task["is_all_day"] = False
             task, counter, due_at = self._convert_columns(task)
             task.pop("column_values", None)
@@ -79,6 +84,7 @@ class MondayClient:
                     "due_at": due_at if counter == 1 else None,
                     "group": task.get("group", {}).get("id"),
                     "position": i + delta + 1,
+                    "assigned": assigned,
                 }
             )
             subitems = self.subitems(task.get("id"), i + delta + 1)

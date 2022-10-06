@@ -254,7 +254,7 @@ def match_nt_users(nt_client, emails: list) -> dict:
     for email in emails:
         for nt_user in nt_users:
             l_email = email.lower()
-            if nt_user[0] in (l_email, md5(l_email, nt_user[1])):
+            if nt_user[0] == l_email or nt_user[0] == md5(l_email, nt_user[1]):
                 pairs.append((l_email, nt_user[1]))
                 break
     if pairs:
