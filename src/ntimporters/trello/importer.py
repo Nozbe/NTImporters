@@ -11,6 +11,7 @@ from ntimporters.utils import (
     current_nt_member,
     id16,
     map_color,
+    match_nt_users,
     nt_open_projects_len,
     parse_timestamp,
     post_tag,
@@ -144,7 +145,23 @@ def _import_project_sections(
         except OpenApiException:
             pass
 
+        trello_members = trello_client.members_emails() or {}
+        nt_users = match_nt_users(nt_client, trello_members.values())
+
+        def _get_responsible_id(task: dict):
+            if members := task.get("idMembers"):
+                for member_id in members:
+                    if (
+                        (email := trello_members.get(member_id))
+                        and (responsible_id := nt_users.get(email))
+                        and responsible_id != nt_member_id
+                    ):
+                        return responsible_id
+            return None
+
         for i, task in enumerate(trello_client.tasks(section.get("id"))):
+            responsible_id = _get_responsible_id(task) or nt_member_id if task.get("due") else None
+
             if nt_task := nt_api_tasks.post_task(
                 strip_readonly(
                     models.Task(
@@ -156,7 +173,7 @@ def _import_project_sections(
                         project_section_id=models.Id16Nullable(str(nt_section_id)),
                         project_position=float(i),
                         due_at=parse_timestamp(task.get("due")),
-                        responsible_id=nt_member_id if task.get("due") else None,
+                        responsible_id=responsible_id,
                         is_all_day=False,  # trello due at has to be specified with time
                         ended_at=None
                         if not task.get("dueComplete")
@@ -165,8 +182,7 @@ def _import_project_sections(
                     )
                 )
             ):
-                # TODO set responsible_id and below
-                if task.get("due"):
+                if task.get("due") and not responsible_id:
                     set_unassigned_tag(nt_client, str(nt_task.id))
                 _import_tags(
                     nt_client,
