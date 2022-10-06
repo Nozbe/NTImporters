@@ -238,7 +238,7 @@ def post_tag(nt_client, tag_name: str, color: str):
     return str(nt_tag.id) if nt_tag else None
 
 
-def match_nt_users(nt_client, emails: list) -> list[tuple]:
+def match_nt_users(nt_client, emails: list) -> dict:
     """Match 3rd party with Nozbe users and return email,member id pairs"""
 
     def md5(email: str, user_id: str):
@@ -262,5 +262,5 @@ def match_nt_users(nt_client, emails: list) -> list[tuple]:
             str(elt.user_id): str(elt.id)
             for elt in apis.TeamMembersApi(nt_client).get_team_members()
         }
-        return [(elt[0], nt_members.get(elt[1])) for elt in pairs if elt[1] in nt_members]
-    return []
+        return {elt[0]: nt_members.get(elt[1]) for elt in pairs if elt[1] in nt_members}
+    return {}

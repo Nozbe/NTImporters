@@ -10,6 +10,7 @@ from ntimporters.utils import (
     current_nt_member,
     get_single_tasks_project_id,
     id16,
+    match_nt_users,
     nt_members_by_email,
     nt_open_projects_len,
     parse_timestamp,
@@ -22,7 +23,6 @@ from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
 import asana
-from asana.error import AsanaError
 
 SPEC = {
     "code": "asana",  # codename / ID of importer
@@ -205,13 +205,15 @@ def _import_tasks(
     nt_api_tasks = apis.TasksApi(nt_client)
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_comments = apis.CommentsApi(nt_client)
-    nt_members, nt_member_id = nt_members_by_email(nt_client)
+    _, nt_member_id = nt_members_by_email(nt_client)
+    user_matches = match_nt_users(
+        nt_client, [elt.get("email") for elt in asana_client.users.get_users(opt_fields="email")]
+    )
 
     def _get_responsible_id(assignee: dict):
         """Get Nozbe author_id given asana's user"""
         if assignee and (gid := assignee.get("gid")):
-            if responsible_id := nt_members.get(_get_asana_email_by_gid(asana_client, gid)):
-                return responsible_id
+            return user_matches.get(_get_asana_email_by_gid(asana_client, gid))
         return None
 
     for task in asana_tasks:
