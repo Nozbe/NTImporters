@@ -246,9 +246,9 @@ def match_nt_users(nt_client, emails: list) -> dict:
         return hashlib.md5((user_id + email.lower()).encode(encoding="utf-8")).hexdigest()  # nosec
 
     nt_users = [
-        (str(elt.email), str(elt.id))
+        (str(elt.email if hasattr(elt, "email") else elt.invitation_email), str(elt.id))
         for elt in apis.UsersApi(nt_client).get_users()
-        if hasattr(elt, "email")
+        if any((hasattr(elt, "email"), hasattr(elt, "email")))
     ]
     pairs = []
     for email in emails:
