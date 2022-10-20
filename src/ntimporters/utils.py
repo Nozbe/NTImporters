@@ -1,5 +1,6 @@
 """ Common helper functions """
 import functools
+import hashlib
 import json
 import random
 from os import getenv
@@ -8,7 +9,6 @@ from typing import Optional, Tuple
 import requests
 from dateutil.parser import isoparse
 from openapi_client import apis, models
-from openapi_client.exceptions import OpenApiException
 from openapi_client.model.color import Color
 from openapi_client.model_utils import ModelNormal
 
@@ -41,18 +41,16 @@ def subscribe_trial(api_key: str, nt_team_id: str, members_len: int = None) -> b
 def nt_open_projects_len(nt_client, team_id: str):
     """Return number of open projects"""
     return sum(
-        [
-            True
-            for elt in get_projects_per_team(nt_client, team_id)
-            if all(
-                (
-                    elt.get("is_open"),
-                    (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at"))),
-                    not elt.get("is_template"),
-                    not elt.get("is_single_actions"),
-                )
+        True
+        for elt in get_projects_per_team(nt_client, team_id)
+        if all(
+            (
+                elt.get("is_open"),
+                (not hasattr(elt, "ended_at") or not bool(elt.get("ended_at"))),
+                not elt.get("is_template"),
+                not elt.get("is_single_actions"),
             )
-        ]
+        )
     )
 
 
@@ -238,3 +236,31 @@ def post_tag(nt_client, tag_name: str, color: str):
         )
     )
     return str(nt_tag.id) if nt_tag else None
+
+
+def match_nt_users(nt_client, emails: list) -> dict:
+    """Match 3rd party with Nozbe users and return email,member id pairs"""
+
+    def md5(email: str, user_id: str):
+        "Calculate hash"
+        return hashlib.md5((user_id + email.lower()).encode(encoding="utf-8")).hexdigest()  # nosec
+
+    nt_users = [
+        (str(elt.email if hasattr(elt, "email") else elt.invitation_email), str(elt.id))
+        for elt in apis.UsersApi(nt_client).get_users()
+        if any((hasattr(elt, "email"), hasattr(elt, "email")))
+    ]
+    pairs = []
+    for email in emails:
+        for nt_user in nt_users:
+            l_email = email.lower()
+            if nt_user[0] == l_email or nt_user[0] == md5(l_email, nt_user[1]):
+                pairs.append((l_email, nt_user[1]))
+                break
+    if pairs:
+        nt_members = {
+            str(elt.user_id): str(elt.id)
+            for elt in apis.TeamMembersApi(nt_client).get_team_members()
+        }
+        return {elt[0]: nt_members.get(elt[1]) for elt in pairs if elt[1] in nt_members}
+    return {}

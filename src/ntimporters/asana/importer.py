@@ -10,6 +10,7 @@ from ntimporters.utils import (
     current_nt_member,
     get_single_tasks_project_id,
     id16,
+    match_nt_users,
     nt_members_by_email,
     nt_open_projects_len,
     parse_timestamp,
@@ -22,7 +23,6 @@ from openapi_client import apis, models
 from openapi_client.exceptions import OpenApiException
 
 import asana
-from asana.error import AsanaError
 
 SPEC = {
     "code": "asana",  # codename / ID of importer
@@ -88,6 +88,7 @@ def _import_data(
     nt_api_projects = apis.ProjectsApi(nt_client)
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_member_id = current_nt_member(nt_client)
+
     check_limits(
         nt_auth_token,
         team_id,
@@ -205,13 +206,19 @@ def _import_tasks(
     nt_api_tasks = apis.TasksApi(nt_client)
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_comments = apis.CommentsApi(nt_client)
-    nt_members, nt_member_id = nt_members_by_email(nt_client)
+    _, nt_member_id = nt_members_by_email(nt_client)
+    user_matches = match_nt_users(
+        nt_client, [elt.get("email") for elt in asana_users(asana_client)]
+    )
 
     def _get_responsible_id(assignee: dict):
         """Get Nozbe author_id given asana's user"""
-        if assignee and (gid := assignee.get("gid")):
-            if responsible_id := nt_members.get(_get_asana_email_by_gid(asana_client, gid)):
-                return responsible_id
+        if (
+            assignee
+            and (gid := assignee.get("gid"))
+            and (email := _get_asana_email_by_gid(asana_client, gid))
+        ):
+            return user_matches.get(email.lower())
         return None
 
     for task in asana_tasks:
@@ -310,3 +317,15 @@ def _map_section_id(asana_task: dict, map_section_id: dict) -> models.Id16Nullab
         return None
     asana_section = asana_task.get("memberships")[0].get("section")
     return models.Id16Nullable(asana_section and map_section_id.get(asana_section.get("gid")))
+
+
+def asana_users(asana_client):
+    """Get asana users from all workspaces"""
+    users = []
+
+    for workspace in asana_client.workspaces.find_all(full_payload=False):
+        users += list(
+            asana_client.users.find_by_workspace(workspace.get("gid"), opt_fields="email")
+        )
+    # gid,email
+    return users

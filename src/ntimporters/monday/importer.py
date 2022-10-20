@@ -1,4 +1,5 @@
 """Monday -> Nozbe importer"""
+import re
 from typing import Optional
 
 import openapi_client as nt
@@ -10,6 +11,7 @@ from ntimporters.utils import (
     check_limits,
     current_nt_member,
     id16,
+    match_nt_users,
     nt_open_projects_len,
     set_unassigned_tag,
     strip_readonly,
@@ -152,7 +154,16 @@ def _import_tasks(
 ):
     """Import tasks"""
     nt_api_tasks = apis.TasksApi(nt_client)
+    monday_users = monday_client.users()
+    nt_members = match_nt_users(nt_client, monday_users.values())
     for task in monday_client.tasks(m_project_id):
+        responsible_id = None
+        if task.get("assigned"):
+            for resp in task.get("assigned") or []:
+                email = monday_users.get(str(resp.get("id")))
+                if responsible_id := nt_members.get(email):
+                    break
+
         if nt_task := nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
@@ -165,12 +176,11 @@ def _import_tasks(
                     project_position=float(task.get("position") or 1.0),
                     due_at=task.get("due_at"),
                     is_all_day=task.get("is_all_day"),
-                    responsible_id=author_id if task.get("due_at") else None,
+                    responsible_id=responsible_id if task.get("due_at") else None,
                 )
             )
         ):
-            # TODO responsible_id and below
-            if task.get("due_at"):
+            if task.get("due_at") and not responsible_id:
                 set_unassigned_tag(nt_client, str(nt_task.id))
             _import_comments(nt_client, monday_client, str(nt_task.id), task.get("id"))
 
@@ -188,7 +198,7 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str)
         nt_api_comments.post_comment(
             strip_readonly(
                 models.Comment(
-                    body=comment.get("text_body") or "…",
+                    body=format_body(comment.get("text_body") or "…"),
                     task_id=models.Id16(nt_task_id),
                     created_at=models.TimestampReadOnly(1),
                     author_id=models.Id16ReadOnly(id16()),
@@ -196,6 +206,10 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str)
                 )
             )
         )
+
+
+def format_body(body) -> str:
+    return re.sub(r"\* ", "- ", body)
 
 
 # TODO import team members

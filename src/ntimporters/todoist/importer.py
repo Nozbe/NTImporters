@@ -11,6 +11,7 @@ from ntimporters.utils import (
     check_limits,
     get_single_tasks_project_id,
     id16,
+    match_nt_users,
     nt_members_by_email,
     nt_open_projects_len,
     post_tag,
@@ -74,7 +75,7 @@ def _import_data(
                 author_id=models.Id16ReadOnly(id16()),
                 created_at=models.TimestampReadOnly(1),
                 last_event_at=models.TimestampReadOnly(1),
-                is_favorite=project.favorite,
+                is_favorite=project.is_favorite,
                 sidebar_position=1.0,
                 is_open=True,
                 extra="",
@@ -225,11 +226,10 @@ def _import_tasks(
     def _get_responsible_id(task: dict):
         """Get NT responsible_id given todoist assignee id"""
         should_set_tag, responsible_id = False, None
-        if task.get("assignee") and (
-            collaborators := todoist_members(todoist_client, task.get("project_id"))
-        ):
-            if todoist_email := collaborators.get(task.get("assignee")):
-                responsible_id = nt_members[0].get(todoist_email)
+        if task.get("assignee_id"):
+            t_members = todoist_members(todoist_client, task.get("project_id"))
+            user_matches = match_nt_users(nt_client, t_members.values())
+            responsible_id = user_matches.get(t_members.get(task.get("assignee_id")))
         if is_sap and responsible_id and responsible_id != nt_members[1]:
             responsible_id = nt_members[1]
         if not responsible_id and task.get("due"):
@@ -265,10 +265,16 @@ def _import_tasks(
         ):
             if not is_sap and should_set_tag:
                 set_unassigned_tag(nt_client, nt_task.id)
-            _import_comments(nt_client, todoist_client, str(nt_task.id), task)
-            _import_tags_assignments(
-                nt_api_tag_assignments, str(nt_task.id), tags_mapping, task.get("label_ids") or []
-            )
+            try:
+                _import_comments(nt_client, todoist_client, str(nt_task.id), task)
+                _import_tags_assignments(
+                    nt_api_tag_assignments,
+                    str(nt_task.id),
+                    tags_mapping,
+                    task.get("label_ids") or [],
+                )
+            except Exception:
+                pass
 
 
 # pylint: enable=too-many-arguments
@@ -332,7 +338,7 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict):
 
     comments = sorted(
         todoist_client.get_comments(task_id=task.get("id")),
-        key=lambda elt: isoparse(elt.posted).timestamp(),
+        key=lambda elt: isoparse(elt.posted_at).timestamp(),
     )
     if task.get("description"):
         comments.insert(0, Comment(content=task.get("description")))
