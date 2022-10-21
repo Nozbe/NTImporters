@@ -59,7 +59,7 @@ def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, curr
     if "localhost" in API_HOST:
         return
     limits = nt_limits(nt_client, nt_team_id)
-    if current_len > (limit := limits.get(limit_name, 0)) > -1 and not subscribe_trial(mail
+    if current_len > (limit := limits.get(limit_name, 0)) > -1 and not subscribe_trial(
         api_key, nt_team_id
     ):
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
