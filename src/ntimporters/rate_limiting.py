@@ -6,11 +6,12 @@ from time import sleep
 class RLProxy:
     """Proxy class with rate limiting"""
 
-    def __init__(self, proxied_object, window=15 * 60, num_requests=450):
+    def __init__(self, proxied_object, window=15 * 60, num_requests=450, prefix="get_"):
         """Window - timeframe in seconds , num_requests = max number of wrapped_method calls"""
         now = datetime.datetime.now()
         self._max_rate = num_requests
         self._window = window
+        self._prefix = prefix
 
         self.num_requests = 0
         self.next_reset_at = now + datetime.timedelta(seconds=self._window)
@@ -20,7 +21,8 @@ class RLProxy:
         def wrapped_method(*args, **kwargs):
             """Wrapped method with rate limiting"""
             print("C", attr)
-            if attr.startswith("get_"):
+
+            if self._prefix is None or attr.startswith(self._prefix):
                 # apply rl only to class.get_* methods (as in Todoist SDK)
                 self.check_rl()
             result = getattr(self.__proxied, attr)(*args, **kwargs)
