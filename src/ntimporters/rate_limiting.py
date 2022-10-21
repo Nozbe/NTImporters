@@ -6,7 +6,7 @@ from time import sleep
 class RLProxy:
     """Proxy class with rate limiting"""
 
-    def __init__(self, proxied_object, window=15 * 60, num_requests=250):
+    def __init__(self, proxied_object, window=15 * 60, num_requests=450):
         """Window - timeframe in seconds , num_requests = max number of wrapped_method calls"""
         now = datetime.datetime.now()
         self._max_rate = num_requests
