@@ -59,7 +59,7 @@ def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, curr
     if "localhost" in API_HOST:
         return
     limits = nt_limits(nt_client, nt_team_id)
-    if current_len > (limit := limits.get(limit_name, 0)) > -1 and not subscribe_trial(
+    if current_len > (limit := limits.get(limit_name, 0)) > -1 and not subscribe_trial(mail
         api_key, nt_team_id
     ):
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
@@ -248,7 +248,7 @@ def match_nt_users(nt_client, emails: list) -> dict:
     nt_users = [
         (str(elt.email if hasattr(elt, "email") else elt.invitation_email), str(elt.id))
         for elt in apis.UsersApi(nt_client).get_users()
-        if any((hasattr(elt, "email"), hasattr(elt, "email")))
+        if any((hasattr(elt, "email"), hasattr(elt, "invitation_email")))
     ]
     pairs = []
     for email in emails:
