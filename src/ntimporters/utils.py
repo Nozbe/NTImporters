@@ -80,14 +80,58 @@ def strip_readonly(model: ModelNormal):
     return model
 
 
-def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
-    """Add project to project' group"""
+def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
+    """Get project group id if any"""
     st_groups = _get_with_query(
         nt_client,
         apis.ProjectGroupsApi(nt_client).get_project_groups_endpoint,
         [("limit", "1"), ("name", group_name), ("team_id", team_id)],
     )
-    group_id = st_groups[0].get("id") if st_groups and st_groups[0] else None
+    return st_groups[0].get("id") if st_groups and st_groups[0] else None
+
+
+def get_imported_entities(nt_client, team_id, group_name):
+    """Get already imported records"""
+    already_imported = []
+    if group_id := get_group_id(nt_client, team_id, group_name):
+        for pgroup in _get_with_query(
+            nt_client,
+            apis.GroupAssignmentsApi(nt_client).get_group_assignments_endpoint,
+            [("group_id", group_id), ("group_type", "project")],
+        ):
+            project = apis.ProjectsApi(nt_client).get_project_by_id(pgroup.get("object_id"))
+            already_imported.append(("project", project))
+            for section in _get_with_query(
+                nt_client,
+                apis.ProjectSectionsApi(nt_client).get_project_sections_endpoint,
+                [("project_id", project.get("id"))],
+            ):
+                already_imported.append(("project_section", section))
+            for task in _get_with_query(
+                nt_client,
+                apis.TasksApi(nt_client).get_tasks_endpoint,
+                [("project_id", project.get("id"))],
+            ):
+                already_imported.append(("task", task))
+                for comment in _get_with_query(
+                    nt_client,
+                    apis.CommentsApi(nt_client).get_comments_endpoint,
+                    [("task_id", task.get("id"))],
+                ):
+                    already_imported.append(("comment", comment))
+                for tag in _get_with_query(
+                    nt_client,
+                    apis.TagsApi(nt_client).get_tags_endpoint,
+                    [("task_id", task.get("id"))],
+                ):
+                    already_imported.append(("tag", tag))
+    return already_imported
+
+
+def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
+    """Add project to project' group"""
+    group_id = get_group_id(nt_client, team_id, group_name)
+
     try:
         if not group_id and (
             group := apis.ProjectGroupsApi(nt_client).post_project_group(
