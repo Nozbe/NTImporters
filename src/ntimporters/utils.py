@@ -90,6 +90,12 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
     return st_groups[0].get("id") if st_groups and st_groups[0] else None
 
 
+def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
+    """Check if entity already exists and return its id"""
+    if entity_type in imported_entities:
+        return {"id": elt[1] for elt in imported_entities.get(entity_type) if elt[0] == name}
+
+
 def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
     """Get already imported records"""
     already_imported = []
@@ -126,10 +132,16 @@ def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
                 ):
                     already_imported.append(("tag", tag))
     entities = {
-        "comments": [elt[1].get("body")[:10] for elt in already_imported if elt[0] == "comment"]
+        "comments": {
+            elt[1].get("body")[:10]: elt[1].get("id")
+            for elt in already_imported
+            if elt[0] == "comment"
+        }
     }
     for rtype in ("task", "tag", "project", "project_section"):
-        entities[f"{rtype}s"]: [elt[1].get("name") for elt in already_imported if elt[0] == rtype]
+        entities[f"{rtype}s"] = {
+            elt[1].get("name"): elt[1].get("id") for elt in already_imported if elt[0] == rtype
+        }
     return entities
 
 
