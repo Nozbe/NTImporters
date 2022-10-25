@@ -90,7 +90,7 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
     return st_groups[0].get("id") if st_groups and st_groups[0] else None
 
 
-def get_imported_entities(nt_client, team_id, group_name):
+def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
     """Get already imported records"""
     already_imported = []
     if group_id := get_group_id(nt_client, team_id, group_name):
@@ -125,7 +125,12 @@ def get_imported_entities(nt_client, team_id, group_name):
                     [("task_id", task.get("id"))],
                 ):
                     already_imported.append(("tag", tag))
-    return already_imported
+    entities = {
+        "comments": [elt[1].get("body")[:10] for elt in already_imported if elt[0] == "comment"]
+    }
+    for rtype in ("task", "tag", "project", "project_section"):
+        entities[f"{rtype}s"]: [elt[1].get("name") for elt in already_imported if elt[0] == rtype]
+    return entities
 
 
 def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
