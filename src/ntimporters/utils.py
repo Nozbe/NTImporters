@@ -92,8 +92,9 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
 
 def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
     """Check if entity already exists and return its id"""
-    if entity_type in imported_entities:
-        return {"id": elt[1] for elt in imported_entities.get(entity_type) if elt[0] == name}
+    if (records := imported_entities.get(entity_type)) and (record_id := records.get(name)):
+        return {"id": record_id}
+    return {}
 
 
 def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
@@ -213,7 +214,10 @@ def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
         project
         for project in nt_project_api.get_projects(
             limit=10000,
-            fields="id,name,author_id,created_at,last_event_at,ended_at,team_id,is_open,is_single_actions",
+            fields=(
+                "id,name,author_id,created_at,last_event_at,ended_at,"
+                "team_id,is_open,is_single_actions"
+            ),
         )
         if str(project.team_id) == team_id
     ]
@@ -273,6 +277,7 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
 
 def trim(name: str):
     """Return max 255 characters"""
+    # return (name or "Untitled")[:255]
     if isinstance(name, str):
         return name[:255] or "Untitled"
     return name or "Untitled"
