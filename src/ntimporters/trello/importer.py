@@ -133,7 +133,6 @@ def _import_project_sections(
     """Import trello lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
-    imported = imported or {}
 
     # import project sections
     check_limits(
@@ -269,7 +268,6 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
     comments += sorted(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
     )
-    imported = imported or {}
     for comment in comments:
         if not exists("comments", body := comment.get("text") or "…", imported):
             nt_api_comments.post_comment(

@@ -163,7 +163,6 @@ def _import_project_sections(
 ):
     """Import todoist lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
-    imported = imported or {}
 
     # import project sections
     mapping = {}
@@ -214,7 +213,6 @@ def _import_tasks(
     is_sap: bool = False,
     imported=None,
 ):
-    imported = imported or {}
     nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
     tags_mapping = _import_tags(nt_client, todoist_client, team_id, nt_auth_token)
@@ -354,7 +352,6 @@ class Comment:
 
 def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imported=None):
     """Import task-related comments"""
-    imported = imported or {}
     nt_api_comments = apis.CommentsApi(nt_client)
 
     comments = sorted(

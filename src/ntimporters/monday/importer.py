@@ -186,7 +186,6 @@ def _import_tasks(
     """Import tasks"""
     nt_api_tasks = apis.TasksApi(nt_client)
     monday_users = monday_client.users()
-    imported = imported or {}
     nt_members = match_nt_users(nt_client, monday_users.values())
     for task in monday_client.tasks(m_project_id):
         responsible_id = None
@@ -227,7 +226,6 @@ def _import_tasks(
 def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None):
     """Import task-related comments"""
     nt_api_comments = apis.CommentsApi(nt_client)
-    imported = imported or {}
     for comment in sorted(
         monday_client.comments(tr_task_id),
         key=lambda elt: isoparse(elt.get("created_at")).timestamp(),

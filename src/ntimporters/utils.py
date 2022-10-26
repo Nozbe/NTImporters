@@ -94,10 +94,11 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
 
 def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
     """Check if entity already exists and return its id"""
-    if entity_type == "comments":
-        name = name[:10]
-    if (records := imported_entities.get(entity_type)) and (record := records.get(name)):
-        return record
+    if imported_entities:
+        if entity_type == "comments":
+            name = name[:10]
+        if (records := imported_entities.get(entity_type)) and (record := records.get(name)):
+            return record
     return Dict({"id": None})
 
 

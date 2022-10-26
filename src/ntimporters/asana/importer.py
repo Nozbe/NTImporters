@@ -225,7 +225,6 @@ def _import_tasks(
     user_matches = match_nt_users(
         nt_client, [elt.get("email") for elt in asana_users(asana_client)]
     )
-    imported = imported or {}
 
     def _get_responsible_id(assignee: dict):
         """Get Nozbe author_id given asana's user"""
