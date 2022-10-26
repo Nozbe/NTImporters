@@ -302,7 +302,7 @@ def _import_tasks(
             )
 
         if task_description := task_full.get("notes", "") and not exists(
-            "comments", task_description[:10], imported
+            "comments", task_description, imported
         ):
             _post_comment(task_description, nt_task_id)
         checklist = []
@@ -314,13 +314,11 @@ def _import_tasks(
 
         if checklist:
             body = "\n".join(checklist)
-            if not exists("comments", body[:10], imported):
+            if not exists("comments", body, imported):
                 _post_comment(body, nt_task_id)
 
         for story in asana_client.stories.find_by_task(task["gid"]):
-            if (body := story.get("type")) == "comment" and not exists(
-                "comments", body[:10], imported
-            ):
+            if (body := story.get("type")) == "comment" and not exists("comments", body, imported):
                 _post_comment(story.get("text"), nt_task_id)
 
         # TODO import attachments
