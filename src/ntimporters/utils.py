@@ -3,6 +3,7 @@ import functools
 import hashlib
 import json
 import random
+from collections import UserDict
 from os import getenv
 from typing import Optional, Tuple
 
@@ -16,6 +17,7 @@ HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = f"https://{HOST}.nozbe.com/v1/api"
+# API_HOST = "http://localhost:8888/v1/api"
 
 
 def id16():
@@ -87,14 +89,23 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
         apis.ProjectGroupsApi(nt_client).get_project_groups_endpoint,
         [("limit", "1"), ("name", group_name), ("team_id", team_id)],
     )
-    return st_groups[0].get("id") if st_groups and st_groups[0] else None
+    return str(st_groups[0].get("id")) if st_groups and st_groups[0] else None
 
 
 def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
     """Check if entity already exists and return its id"""
-    if (records := imported_entities.get(entity_type)) and (record_id := records.get(name)):
-        return {"id": record_id}
-    return {}
+    if (records := imported_entities.get(entity_type)) and (record := records.get(name)):
+        return record
+    return Dict({"id": None})
+
+
+class Dict(UserDict):
+    """Class pretending OpenApi object and dict in the same time"""
+
+    @property
+    def id(self):
+        """Id as a property"""
+        return self.get("id")
 
 
 def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
@@ -106,43 +117,48 @@ def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
             apis.GroupAssignmentsApi(nt_client).get_group_assignments_endpoint,
             [("group_id", group_id), ("group_type", "project")],
         ):
-            project = apis.ProjectsApi(nt_client).get_project_by_id(pgroup.get("object_id"))
+            project = apis.ProjectsApi(nt_client).get_project_by_id(str(pgroup.get("object_id")))
             already_imported.append(("project", project))
             for section in _get_with_query(
                 nt_client,
                 apis.ProjectSectionsApi(nt_client).get_project_sections_endpoint,
-                [("project_id", project.get("id"))],
+                [("project_id", str(project.get("id")))],
             ):
                 already_imported.append(("project_section", section))
             for task in _get_with_query(
                 nt_client,
                 apis.TasksApi(nt_client).get_tasks_endpoint,
-                [("project_id", project.get("id"))],
+                [("project_id", str(project.get("id")))],
             ):
                 already_imported.append(("task", task))
                 for comment in _get_with_query(
                     nt_client,
                     apis.CommentsApi(nt_client).get_comments_endpoint,
-                    [("task_id", task.get("id"))],
+                    [("task_id", str(task.get("id")))],
                 ):
                     already_imported.append(("comment", comment))
                 for tag in _get_with_query(
                     nt_client,
                     apis.TagsApi(nt_client).get_tags_endpoint,
-                    [("task_id", task.get("id"))],
+                    [("task_id", str(task.get("id")))],
                 ):
                     already_imported.append(("tag", tag))
     entities = {
         "comments": {
-            elt[1].get("body")[:10]: elt[1].get("id")
+            str(elt[1].get("body"))[:10]: Dict({"id": elt[1].get("id")})
             for elt in already_imported
             if elt[0] == "comment"
         }
     }
     for rtype in ("task", "tag", "project", "project_section"):
         entities[f"{rtype}s"] = {
-            elt[1].get("name"): elt[1].get("id") for elt in already_imported if elt[0] == rtype
+            str(elt[1].get("name")): Dict({"id": elt[1].get("id")})
+            for elt in already_imported
+            if elt[0] == rtype
         }
+    # from pprint import pprint
+    #
+    # pprint(entities)
     return entities
 
 

@@ -9,6 +9,8 @@ from ntimporters.utils import (
     add_to_project_group,
     check_limits,
     current_nt_member,
+    exists,
+    get_imported_entities,
     id16,
     map_color,
     match_nt_users,
@@ -28,6 +30,7 @@ SPEC = {
     "url": "https://nozbe.help/advancedfeatures/importers/#trello",
     "input_fields": ("nt_auth_token", "auth_token", "app_key", "team_id"),
 }
+IMPORT_NAME = "Imported from Trello"
 
 # main method called by Nozbe app
 def run_import(
@@ -63,11 +66,12 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
     """Import everything from Trello to Nozbe"""
     projects_api = apis.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)
+    imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
     def _import_project(project: dict, curr_member: str):
         """Import trello project"""
         project_model = models.Project(
-            name=models.NameAllowEmpty(trim(project.get("name", ""))),
+            name=models.NameAllowEmpty(name := trim(project.get("name", ""))),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -79,14 +83,25 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
             is_open=True,
             extra="",
         )
-        nt_project = projects_api.post_project(strip_readonly(project_model)) or {}
+        nt_project = (
+            exists("projects", name, imported)
+            or projects_api.post_project(strip_readonly(project_model))
+            or {}
+        )
 
         if not (nt_project_id := str(nt_project.get("id"))):
             return
-        add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Trello")
+        add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
         _import_project_sections(
-            nt_client, trello_client, nt_project_id, project, curr_member, team_id, nt_auth_token
+            nt_client,
+            trello_client,
+            nt_project_id,
+            project,
+            curr_member,
+            team_id,
+            nt_auth_token,
+            imported=imported,
         )
 
     check_limits(
@@ -113,10 +128,12 @@ def _import_project_sections(
     nt_member_id: str,
     team_id: str,
     nt_auth_token: str,
+    imported=None,
 ):
     """Import trello lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
     nt_api_tasks = apis.TasksApi(nt_client)
+    imported = imported or {}
 
     # import project sections
     check_limits(
@@ -129,12 +146,13 @@ def _import_project_sections(
     for j, section in enumerate(trello_sections):
         nt_section_id = None
         try:
-            if nt_section := nt_api_sections.post_project_section(
+            nt_section = exists("project_sections", name := trim(section.get("name", "")), imported)
+            if nt_section := nt_section or nt_api_sections.post_project_section(
                 strip_readonly(
                     models.ProjectSection(
                         models.Id16ReadOnly(id16()),
                         models.Id16(nt_project_id),
-                        models.Name(trim(section.get("name", ""))),
+                        models.Name(name),
                         models.TimestampReadOnly(1),
                         archived_at=models.TimestampNullable(1) if section.get("closed") else None,
                         position=float(j),
@@ -142,7 +160,7 @@ def _import_project_sections(
                 )
             ):
                 nt_section_id = nt_section.id
-        except OpenApiException:
+        except OpenApiException as exc:
             pass
 
         trello_members = trello_client.members_emails() or {}
@@ -162,10 +180,11 @@ def _import_project_sections(
         for i, task in enumerate(trello_client.tasks(section.get("id"))):
             responsible_id = _get_responsible_id(task) or nt_member_id if task.get("due") else None
 
-            if nt_task := nt_api_tasks.post_task(
+            nt_task = exists("tasks", name := trim(task.get("name", "")), imported)
+            if nt_task := nt_task or nt_api_tasks.post_task(
                 strip_readonly(
                     models.Task(
-                        name=models.Name(trim(task.get("name", ""))),
+                        name=models.Name(name),
                         project_id=models.ProjectId(nt_project_id),
                         author_id=models.Id16ReadOnly(id16()),
                         created_at=models.TimestampReadOnly(1),
@@ -192,7 +211,7 @@ def _import_project_sections(
                         nt_client, trello_client, project, team_id, nt_auth_token
                     ),
                 )
-                _import_comments(nt_client, trello_client, str(nt_task.id), task)
+                _import_comments(nt_client, trello_client, str(nt_task.id), task, imported=imported)
                 # TODO import attachments, reminders?
 
 
@@ -242,7 +261,7 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
             assigned.append(nt_tag_id)
 
 
-def _import_comments(nt_client, trello_client, nt_task_id: str, task):
+def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=None):
     """Import task-related comments"""
     tr_task_id = task.get("id")
     nt_api_comments = apis.CommentsApi(nt_client)
@@ -250,18 +269,20 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task):
     comments += sorted(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
     )
+    imported = imported or {}
     for comment in comments:
-        nt_api_comments.post_comment(
-            strip_readonly(
-                models.Comment(
-                    body=comment.get("text") or "…",
-                    task_id=models.Id16(nt_task_id),
-                    author_id=models.Id16ReadOnly(id16()),
-                    created_at=models.TimestampReadOnly(1),
-                    extra="",
+        if not exists("comments", body := comment.get("text") or "…", imported):
+            nt_api_comments.post_comment(
+                strip_readonly(
+                    models.Comment(
+                        body=body,
+                        task_id=models.Id16(nt_task_id),
+                        author_id=models.Id16ReadOnly(id16()),
+                        created_at=models.TimestampReadOnly(1),
+                        extra="",
+                    )
                 )
             )
-        )
 
 
 # def _import_members(nt_client, trello_client, team_id: str):
