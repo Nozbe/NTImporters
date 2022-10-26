@@ -10,6 +10,8 @@ from ntimporters.utils import (
     add_to_project_group,
     check_limits,
     current_nt_member,
+    exists,
+    get_imported_entities,
     id16,
     match_nt_users,
     nt_open_projects_len,
@@ -26,6 +28,7 @@ SPEC = {
     "url": "https://nozbe.help/advancedfeatures/importers/#monday",
     "input_fields": ("team_id", "nt_auth_token", "app_key"),
 }
+IMPORT_NAME = "Imported from Monday"
 
 
 # main method called by Nozbe app
@@ -58,13 +61,14 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
     """Import everything from monday to Nozbe"""
     projects_api = apis.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)
+    imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
     def _import_project(project: dict, curr_member: str):
         """Import monday project"""
         if project.get("name", "").startswith("Subitems of"):
             return
         project_model = models.Project(
-            name=models.NameAllowEmpty(trim(project.get("name", ""))),
+            name=models.NameAllowEmpty(name := trim(project.get("name", ""))),
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -77,13 +81,24 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
             is_open=project.get("board_kind") == "public",
             extra="",
         )
-        nt_project = projects_api.post_project(strip_readonly(project_model)) or {}
+        nt_project = (
+            exists("projects", name, imported)
+            or projects_api.post_project(strip_readonly(project_model))
+            or {}
+        )
         if not (nt_project_id := str(nt_project.get("id"))):
             return
-        add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Monday")
+        add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
         _import_project_sections(
-            nt_client, monday_client, nt_project_id, project, curr_member, team_id, nt_auth_token
+            nt_client,
+            monday_client,
+            nt_project_id,
+            project,
+            curr_member,
+            team_id,
+            nt_auth_token,
+            imported=imported,
         )
 
     monday_projects = monday_client.projects()
@@ -113,9 +128,11 @@ def _import_project_sections(
     curr_member: str,
     team_id: str,
     nt_auth_token: str,
+    imported=None,
 ):
     """Import monday lists as project sections"""
     nt_api_sections = apis.ProjectSectionsApi(nt_client)
+    imported = imported or {}
 
     check_limits(
         nt_auth_token,
@@ -127,12 +144,14 @@ def _import_project_sections(
     sections_mapping = {}
     for section in monday_sections:
         try:
-            if nt_section := nt_api_sections.post_project_section(
+            if nt_section := exists(
+                "project_sections", name := trim(section.get("title", "")), imported
+            ) or nt_api_sections.post_project_section(
                 strip_readonly(
                     models.ProjectSection(
                         models.Id16ReadOnly(id16()),
                         models.Id16(nt_project_id),
-                        models.Name(trim(section.get("title", ""))),
+                        models.Name(name),
                         models.TimestampReadOnly(1),
                         archived_at=models.TimestampReadOnly(1)
                         if section.get("archived")
@@ -145,16 +164,29 @@ def _import_project_sections(
         except OpenApiException:
             pass
     _import_tasks(
-        nt_client, monday_client, sections_mapping, project.get("id"), nt_project_id, curr_member
+        nt_client,
+        monday_client,
+        sections_mapping,
+        project.get("id"),
+        nt_project_id,
+        curr_member,
+        imported=imported,
     )
 
 
 def _import_tasks(
-    nt_client, monday_client, sections_mapping, m_project_id, nt_project_id, author_id
+    nt_client,
+    monday_client,
+    sections_mapping,
+    m_project_id,
+    nt_project_id,
+    author_id,
+    imported=None,
 ):
     """Import tasks"""
     nt_api_tasks = apis.TasksApi(nt_client)
     monday_users = monday_client.users()
+    imported = imported or {}
     nt_members = match_nt_users(nt_client, monday_users.values())
     for task in monday_client.tasks(m_project_id):
         responsible_id = None
@@ -164,10 +196,12 @@ def _import_tasks(
                 if responsible_id := nt_members.get(email):
                     break
 
-        if nt_task := nt_api_tasks.post_task(
+        if nt_task := exists(
+            "tasks", name := trim(task.get("name", "")), imported
+        ) or nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    name=models.Name(trim(task.get("name", ""))),
+                    name=models.Name(name),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
@@ -182,30 +216,34 @@ def _import_tasks(
         ):
             if task.get("due_at") and not responsible_id:
                 set_unassigned_tag(nt_client, str(nt_task.id))
-            _import_comments(nt_client, monday_client, str(nt_task.id), task.get("id"))
+            _import_comments(
+                nt_client, monday_client, str(nt_task.id), task.get("id"), imported=imported
+            )
 
 
 # pylint: enable=too-many-arguments
 
 
-def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str):
+def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None):
     """Import task-related comments"""
     nt_api_comments = apis.CommentsApi(nt_client)
+    imported = imported or {}
     for comment in sorted(
         monday_client.comments(tr_task_id),
         key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
     ):
-        nt_api_comments.post_comment(
-            strip_readonly(
-                models.Comment(
-                    body=format_body(comment.get("text_body") or "…"),
-                    task_id=models.Id16(nt_task_id),
-                    created_at=models.TimestampReadOnly(1),
-                    author_id=models.Id16ReadOnly(id16()),
-                    extra="",
+        if not exists("comments", body := format_body(comment.get("text_body") or "…"), imported):
+            nt_api_comments.post_comment(
+                strip_readonly(
+                    models.Comment(
+                        body=body,
+                        task_id=models.Id16(nt_task_id),
+                        created_at=models.TimestampReadOnly(1),
+                        author_id=models.Id16ReadOnly(id16()),
+                        extra="",
+                    )
                 )
             )
-        )
 
 
 def format_body(body) -> str:
