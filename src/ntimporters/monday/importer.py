@@ -73,6 +73,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
             last_event_at=models.TimestampReadOnly(1),
+            is_template=False,
             ended_at=models.TimestampNullable(1)
             if project.get("state") in ("archived", "deleted")
             else None,

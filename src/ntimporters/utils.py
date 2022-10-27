@@ -110,6 +110,10 @@ class Dict(UserDict):
         """Id as a property"""
         return self.get("id")
 
+    def __len__(self):
+        """Check if none"""
+        return self.get("id") is not None
+
 
 def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
     """Get already imported records"""

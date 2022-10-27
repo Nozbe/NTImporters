@@ -75,6 +75,7 @@ def _import_data(
         if project.name != "Inbox":
             project_model = models.Project(
                 name=models.NameAllowEmpty(name := trim(project.name)),
+                is_template=False,
                 team_id=models.Id16(team_id),
                 author_id=models.Id16ReadOnly(id16()),
                 created_at=models.TimestampReadOnly(1),
@@ -263,9 +264,10 @@ def _import_tasks(
         ) or nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    name=name,
+                    name=models.Name(name),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
+                    missed_repeats=0,
                     created_at=models.TimestampReadOnly(1),
                     last_activity_at=models.TimestampReadOnly(1),
                     project_section_id=models.Id16Nullable(
@@ -365,6 +367,7 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imp
             nt_api_comments.post_comment(
                 strip_readonly(
                     models.Comment(
+                        is_team=False,
                         body=body,
                         task_id=models.Id16(nt_task_id),
                         author_id=models.Id16ReadOnly(id16()),

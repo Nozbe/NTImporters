@@ -72,6 +72,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
         """Import trello project"""
         project_model = models.Project(
             name=models.NameAllowEmpty(name := trim(project.get("name", ""))),
+            is_template=False,
             team_id=models.Id16(team_id),
             author_id=models.Id16ReadOnly(id16()),
             created_at=models.TimestampReadOnly(1),
@@ -193,6 +194,7 @@ def _import_project_sections(
                         due_at=parse_timestamp(task.get("due")),
                         responsible_id=responsible_id,
                         is_all_day=False,  # trello due at has to be specified with time
+                        missed_repeats=0,
                         ended_at=None
                         if not task.get("dueComplete")
                         else parse_timestamp(task.get("due")),
