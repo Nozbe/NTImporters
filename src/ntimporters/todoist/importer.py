@@ -5,6 +5,7 @@ from typing import Optional
 
 import openapi_client as nt
 from dateutil.parser import isoparse
+from ntimporters.rate_limiting import RLProxy
 from ntimporters.utils import (
     API_HOST,
     add_to_project_group,
@@ -48,8 +49,8 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                     api_key={"ApiKeyAuth": nt_auth_token},
                 )
             ),
-            TodoistAPI(auth_token),
-            TodoistAPISync(auth_token),
+            RLProxy(TodoistAPI(auth_token)),
+            RLProxy(TodoistAPISync(auth_token)),
             team_id,
             nt_auth_token,
         )
