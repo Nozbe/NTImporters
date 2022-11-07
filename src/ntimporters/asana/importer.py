@@ -8,6 +8,8 @@ from ntimporters.utils import (
     add_to_project_group,
     check_limits,
     current_nt_member,
+    exists,
+    get_imported_entities,
     get_single_tasks_project_id,
     id16,
     match_nt_users,
@@ -49,6 +51,7 @@ COLOR_MAP = {
     "light-warm-gray": "stone",
 }
 
+IMPORT_NAME = "Imported from Asana"
 
 # main method called by Nozbe app
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Exception]:
@@ -97,23 +100,28 @@ def _import_data(
         _asana_projects_len(asana_client) + nt_open_projects_len(nt_client, team_id),
     )
 
+    imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
     for workspace in asana_client.workspaces.find_all(full_payload=True):
         # import tags
         map_tag_id = {}
         for tag in asana_client.tags.find_by_workspace(workspace["gid"]):
             tag_full = asana_client.tags.find_by_id(tag["gid"])
-            if nt_tag_id := post_tag(
-                nt_client, tag_full.get("name", ""), _map_color(tag_full.get("color"))
+            tag_name = tag_full.get("name", "")
+            nt_tag = exists("tags", tag_name, imported)
+            if nt_tag_id := nt_tag.get("id") or post_tag(
+                nt_client, tag_name, _map_color(tag_full.get("color"))
             ):
                 map_tag_id[tag["gid"]] = str(nt_tag_id)
 
         # import projects
         for project in asana_client.projects.find_by_workspace(workspace["gid"]):
             project_full = asana_client.projects.find_by_id(project["gid"])
-            nt_project = nt_api_projects.post_project(
+            nt_project = exists(
+                "projects", project_name := trim(project_full.get("name", "")), imported
+            ) or nt_api_projects.post_project(
                 strip_readonly(
                     models.Project(
-                        name=models.NameAllowEmpty(trim(project_full.get("name", ""))),
+                        name=models.NameAllowEmpty(project_name),
                         team_id=models.Id16(team_id),
                         author_id=models.Id16ReadOnly(id16()),
                         created_at=models.TimestampReadOnly(1),
@@ -130,7 +138,7 @@ def _import_data(
             if not nt_project:
                 continue
             nt_project_id = str(nt_project.get("id"))
-            add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Asana")
+            add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
             # import project sections
             map_section_id = {}
@@ -141,12 +149,16 @@ def _import_data(
                 if section_full.get("name") == "Untitled section":
                     continue
                 try:
-                    nt_section = nt_api_sections.post_project_section(
+                    nt_section = exists(
+                        "project_sections",
+                        name := trim(section_full.get("name", "")),
+                        imported,
+                    ) or nt_api_sections.post_project_section(
                         strip_readonly(
                             models.ProjectSection(
                                 id=models.Id16ReadOnly(id16()),
                                 project_id=models.Id16(nt_project_id),
-                                name=models.Name(trim(section_full.get("name", ""))),
+                                name=models.Name(name),
                                 created_at=models.TimestampReadOnly(1),
                                 archived_at=models.TimestampNullable(1)
                                 if section_full.get("archived")
@@ -169,6 +181,7 @@ def _import_data(
                 map_section_id,
                 map_tag_id,
                 nt_member_id,
+                imported=imported,
             )
 
         # import loose tasks to Single Tasks project
@@ -182,6 +195,7 @@ def _import_data(
             map_tag_id,
             nt_member_id,
             is_sap=True,
+            imported=imported,
         )
 
 
@@ -201,6 +215,7 @@ def _import_tasks(
     map_tag_id: dict,
     nt_member_id: str,
     is_sap: bool = False,
+    imported=None,
 ):
     """Import task from Asana to Nozbe"""
     nt_api_tasks = apis.TasksApi(nt_client)
@@ -235,10 +250,12 @@ def _import_tasks(
         if is_sap and responsible_id != nt_member_id:
             responsible_id = nt_member_id
 
-        nt_task = nt_api_tasks.post_task(
+        nt_task = exists(
+            "tasks", name := trim(task_full.get("name", "")), imported
+        ) or nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    name=models.Name(trim(task_full.get("name", ""))),
+                    name=models.Name(name),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
@@ -283,7 +300,9 @@ def _import_tasks(
                 )
             )
 
-        if task_description := task_full.get("notes", ""):
+        if task_description := task_full.get("notes", "") and not exists(
+            "comments", task_description, imported
+        ):
             _post_comment(task_description, nt_task_id)
         checklist = []
         for item in asana_client.tasks.get_subtasks_for_task(
@@ -293,10 +312,12 @@ def _import_tasks(
             checklist.append(f"{checked} {item.get('name')}")
 
         if checklist:
-            _post_comment("\n".join(checklist), nt_task_id)
+            body = "\n".join(checklist)
+            if not exists("comments", body, imported):
+                _post_comment(body, nt_task_id)
 
         for story in asana_client.stories.find_by_task(task["gid"]):
-            if story.get("type") == "comment":
+            if (body := story.get("type")) == "comment" and not exists("comments", body, imported):
                 _post_comment(story.get("text"), nt_task_id)
 
         # TODO import attachments

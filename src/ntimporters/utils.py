@@ -3,6 +3,7 @@ import functools
 import hashlib
 import json
 import random
+from collections import UserDict
 from os import getenv
 from typing import Optional, Tuple
 
@@ -16,6 +17,7 @@ HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = f"https://{HOST}.nozbe.com/v1/api"
+# API_HOST = "http://localhost:8888/v1/api"
 
 
 def id16():
@@ -80,14 +82,95 @@ def strip_readonly(model: ModelNormal):
     return model
 
 
-def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
-    """Add project to project' group"""
+def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
+    """Get project group id if any"""
     st_groups = _get_with_query(
         nt_client,
         apis.ProjectGroupsApi(nt_client).get_project_groups_endpoint,
         [("limit", "1"), ("name", group_name), ("team_id", team_id)],
     )
-    group_id = st_groups[0].get("id") if st_groups and st_groups[0] else None
+    return str(st_groups[0].get("id")) if st_groups and st_groups[0] else None
+
+
+def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
+    """Check if entity already exists and return its id"""
+    if imported_entities:
+        if (records := imported_entities.get(entity_type)) and (record := records.get(name)):
+            return record
+    return Dict({"id": None})
+
+
+class Dict(UserDict):
+    """Class pretending OpenApi object and dict in the same time"""
+
+    @property
+    def id(self):
+        """Id as a property"""
+        return self.get("id")
+
+    def __len__(self):
+        """Check if none"""
+        return self.get("id") is not None
+
+
+def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
+    """Get already imported records"""
+    already_imported = []
+    if group_id := get_group_id(nt_client, team_id, group_name):
+        for pgroup in _get_with_query(
+            nt_client,
+            apis.GroupAssignmentsApi(nt_client).get_group_assignments_endpoint,
+            [("group_id", group_id), ("group_type", "project")],
+        ):
+            project = apis.ProjectsApi(nt_client).get_project_by_id(str(pgroup.get("object_id")))
+            already_imported.append(("project", project))
+            for section in _get_with_query(
+                nt_client,
+                apis.ProjectSectionsApi(nt_client).get_project_sections_endpoint,
+                [("project_id", str(project.get("id")))],
+            ):
+                already_imported.append(("project_section", section))
+            for task in _get_with_query(
+                nt_client,
+                apis.TasksApi(nt_client).get_tasks_endpoint,
+                [("project_id", str(project.get("id")))],
+            ):
+                already_imported.append(("task", task))
+                for comment in _get_with_query(
+                    nt_client,
+                    apis.CommentsApi(nt_client).get_comments_endpoint,
+                    [("task_id", str(task.get("id")))],
+                ):
+                    already_imported.append(("comment", comment))
+                for tag in _get_with_query(
+                    nt_client,
+                    apis.TagsApi(nt_client).get_tags_endpoint,
+                    [("task_id", str(task.get("id")))],
+                ):
+                    already_imported.append(("tag", tag))
+    entities = {
+        "comments": {
+            str(elt[1].get("body")): Dict({"id": elt[1].get("id")})
+            for elt in already_imported
+            if elt[0] == "comment"
+        }
+    }
+    for rtype in ("task", "tag", "project", "project_section"):
+        entities[f"{rtype}s"] = {
+            str(elt[1].get("name")): Dict({"id": elt[1].get("id")})
+            for elt in already_imported
+            if elt[0] == rtype
+        }
+    # from pprint import pprint
+    #
+    # pprint(entities)
+    return entities
+
+
+def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
+    """Add project to project' group"""
+    group_id = get_group_id(nt_client, team_id, group_name)
+
     try:
         if not group_id and (
             group := apis.ProjectGroupsApi(nt_client).post_project_group(
@@ -152,7 +235,10 @@ def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
         project
         for project in nt_project_api.get_projects(
             limit=10000,
-            fields="id,name,author_id,created_at,last_event_at,ended_at,team_id,is_open,is_single_actions",
+            fields=(
+                "id,name,author_id,created_at,last_event_at,ended_at,"
+                "team_id,is_open,is_single_actions"
+            ),
         )
         if str(project.team_id) == team_id
     ]
@@ -212,6 +298,7 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
 
 def trim(name: str):
     """Return max 255 characters"""
+    # return (name or "Untitled")[:255]
     if isinstance(name, str):
         return name[:255] or "Untitled"
     return name or "Untitled"
