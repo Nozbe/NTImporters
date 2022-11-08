@@ -300,7 +300,7 @@ def _import_tasks(
                 )
             )
 
-        if task_description := task_full.get("notes", "") and not exists(
+        if (task_description := task_full.get("notes", "")) and not exists(
             "comments", task_description, imported
         ):
             _post_comment(task_description, nt_task_id)
