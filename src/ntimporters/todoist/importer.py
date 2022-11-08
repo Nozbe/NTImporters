@@ -53,7 +53,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                 )
             ),
             RLProxy(TodoistAPI(auth_token)),
-            RLProxy(TodoistAPISync(auth_token)),
+            TodoistAPISync(auth_token),
             team_id,
             nt_auth_token,
         )

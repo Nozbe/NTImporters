@@ -210,7 +210,10 @@ def set_unassigned_tag(nt_client, task_id: str):
                 task_id=models.Id16(str(task_id)),
             )
         )
-        apis.TagAssignmentsApi(nt_client).post_tag_assignment(assignment)
+        try:
+            apis.TagAssignmentsApi(nt_client).post_tag_assignment(assignment)
+        except Exception:
+            pass
 
 
 def nt_limits(nt_client, team_id: str):
