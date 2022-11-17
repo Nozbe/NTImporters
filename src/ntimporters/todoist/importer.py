@@ -265,6 +265,8 @@ def _import_tasks(
         ) or nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
+                    is_followed=False,
+                    is_abandoned=False,
                     name=models.Name(name),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
@@ -372,6 +374,7 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imp
                 strip_readonly(
                     models.Comment(
                         is_team=False,
+                        is_pinned=False,
                         body=body,
                         task_id=models.Id16(nt_task_id),
                         author_id=models.Id16ReadOnly(id16()),

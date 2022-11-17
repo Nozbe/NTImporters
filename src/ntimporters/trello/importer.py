@@ -194,6 +194,8 @@ def _import_project_sections(
                         due_at=parse_timestamp(task.get("due")),
                         responsible_id=responsible_id,
                         is_all_day=False,  # trello due at has to be specified with time
+                        is_followed=False,
+                        is_abandoned=False,
                         missed_repeats=0,
                         ended_at=None
                         if not task.get("dueComplete")
@@ -282,6 +284,8 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
                         task_id=models.Id16(nt_task_id),
                         author_id=models.Id16ReadOnly(id16()),
                         created_at=models.TimestampReadOnly(1),
+                        is_team=False,
+                        is_pinned=False,
                         extra="",
                     )
                 )

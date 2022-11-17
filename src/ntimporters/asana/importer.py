@@ -256,6 +256,9 @@ def _import_tasks(
             strip_readonly(
                 models.Task(
                     name=models.Name(name),
+                    missed_repeats=0,
+                    is_followed=False,
+                    is_abandoned=False,
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
@@ -296,6 +299,9 @@ def _import_tasks(
                 strip_readonly(
                     models.Comment(
                         body=body or "…",
+                        is_team=False,
+                        is_pinned=False,
+                        extra="",
                         task_id=models.Id16(task_id),
                         author_id=models.Id16ReadOnly(id16()),
                         created_at=models.TimestampReadOnly(1),
