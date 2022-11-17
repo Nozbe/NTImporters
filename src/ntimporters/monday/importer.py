@@ -201,7 +201,10 @@ def _import_tasks(
         ) or nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
+                    is_followed=False,
+                    is_abandoned=False,
                     name=models.Name(name),
+                    missed_repeats=0,
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
@@ -235,6 +238,8 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str,
             nt_api_comments.post_comment(
                 strip_readonly(
                     models.Comment(
+                        is_pinned=False,
+                        is_team=False,
                         body=body,
                         task_id=models.Id16(nt_task_id),
                         created_at=models.TimestampReadOnly(1),
