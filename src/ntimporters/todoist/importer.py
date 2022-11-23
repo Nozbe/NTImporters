@@ -313,15 +313,18 @@ def _import_tags_assignments(
     """Assign tags to task"""
     for tag_id in task_tags:
         if nt_tag_id := tags_mapping.get(str(tag_id)):
-            nt_api_tag_assignments.post_tag_assignment(
-                strip_readonly(
-                    models.TagAssignment(
-                        id=models.Id16ReadOnly(id16()),
-                        tag_id=models.Id16(nt_tag_id),
-                        task_id=models.Id16(nt_task_id),
+            try:
+                nt_api_tag_assignments.post_tag_assignment(
+                    strip_readonly(
+                        models.TagAssignment(
+                            id=models.Id16ReadOnly(id16()),
+                            tag_id=models.Id16(nt_tag_id),
+                            task_id=models.Id16(nt_task_id),
+                        )
                     )
                 )
-            )
+            except Exception:
+                pass
 
 
 def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) -> dict:
@@ -371,6 +374,7 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imp
                 strip_readonly(
                     models.Comment(
                         is_team=False,
+                        is_pinned=False,
                         body=body,
                         task_id=models.Id16(nt_task_id),
                         author_id=models.Id16ReadOnly(id16()),
