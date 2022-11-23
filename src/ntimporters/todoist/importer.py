@@ -374,7 +374,6 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imp
                 strip_readonly(
                     models.Comment(
                         is_team=False,
-                        is_pinned=False,
                         body=body,
                         task_id=models.Id16(nt_task_id),
                         author_id=models.Id16ReadOnly(id16()),
