@@ -203,8 +203,8 @@ def _import_tasks(
                 models.Task(
                     is_followed=False,
                     is_abandoned=False,
-                    name=models.Name(name),
                     missed_repeats=0,
+                    name=models.Name(name),
                     project_id=models.ProjectId(nt_project_id),
                     author_id=models.Id16ReadOnly(id16()),
                     created_at=models.TimestampReadOnly(1),
