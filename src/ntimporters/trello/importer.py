@@ -28,7 +28,7 @@ SPEC = {
     "code": "trello",  # codename / ID of importer
     "name": "Trello",  # name of application
     "url": "https://nozbe.help/advancedfeatures/importers/#trello",
-    "input_fields": ("nt_auth_token", "auth_token", "app_key", "team_id"),
+    "input_fields": ("nt_auth_token", "app_key", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Trello"
 
