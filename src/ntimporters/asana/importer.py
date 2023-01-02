@@ -238,7 +238,6 @@ def _import_tasks(
 
     for task in asana_tasks:
         task_full = asana_client.tasks.find_by_id(task["gid"])
-
         due_at = parse_timestamp(task_full.get("due_at")) or parse_timestamp(
             task_full.get("due_on")
         )
@@ -249,6 +248,10 @@ def _import_tasks(
             should_set_tag = True
         if is_sap and responsible_id != nt_member_id:
             responsible_id = nt_member_id
+
+        if is_sap and task_full.get("projects"):
+            # skip tasks from other projects
+            continue
 
         nt_task = exists(
             "tasks", name := trim(task_full.get("name", "")), imported
