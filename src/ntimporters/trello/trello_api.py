@@ -21,7 +21,6 @@ class TrelloClient:
         self.headers = {
             "Authorization": f'OAuth oauth_consumer_key="{app_key}", oauth_token="{token}"'
         }
-        print(self.headers)
         user_data = self.user()
         self.author_email = str(user_data.get("email"))
         self.boards_ids = user_data.get("idBoards", [])
@@ -32,7 +31,6 @@ class TrelloClient:
         ):
             return resp.json()
         else:
-            print(resp.body, str(resp.content), data)
             raise ImportException(
                 f"Connection to trello failed ({resp.status_code}). Wrong credentials?"
             )
