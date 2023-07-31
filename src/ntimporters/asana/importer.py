@@ -53,6 +53,7 @@ COLOR_MAP = {
 
 IMPORT_NAME = "Imported from Asana"
 
+
 # main method called by Nozbe app
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Exception]:
     """Perform import from Asana to Nozbe"""
@@ -131,6 +132,7 @@ def _import_data(
                         ),
                         color=_map_color(project_full.get("color")),
                         is_open=True,  # TODO set is_open based on 'public' and 'members' properties
+                        is_template=False,
                         sidebar_position=1.0,
                     )
                 )
