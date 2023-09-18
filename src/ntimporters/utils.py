@@ -1,10 +1,10 @@
 """ Common helper functions """
 import functools
 import hashlib
+from os import getenv
 import json
 import random
 from collections import UserDict
-from os import getenv
 from typing import Optional, Tuple
 
 import requests

@@ -91,7 +91,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
             or {}
         )
 
-        if not (nt_project_id := str(nt_project.get("id"))):
+        if not (nt_project_id := nt_project and str(nt_project.get("id"))):
             return
         add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
@@ -161,7 +161,7 @@ def _import_project_sections(
                 )
             ):
                 nt_section_id = nt_section.id
-        except OpenApiException as exc:
+        except OpenApiException:
             pass
 
         trello_members = trello_client.members_emails() or {}
