@@ -87,7 +87,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
             or projects_api.post_project(strip_readonly(project_model))
             or {}
         )
-        if not (nt_project_id := str(nt_project.get("id"))):
+        if not (nt_project_id := nt_project and str(nt_project.get("id"))):
             return
         add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 

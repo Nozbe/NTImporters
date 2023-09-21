@@ -7,11 +7,11 @@ import openapi_client as nt
 from dateutil.parser import isoparse
 from ntimporters.rate_limiting import RLProxy
 from ntimporters.utils import (
-    API_HOST,
     add_to_project_group,
     check_limits,
-    exists,
+    API_HOST,
     get_imported_entities,
+    exists,
     get_single_tasks_project_id,
     id16,
     match_nt_users,
@@ -28,6 +28,7 @@ from todoist_api_python.api import TodoistAPI
 
 from todoist import TodoistAPI as TodoistAPISync
 
+
 SPEC = {
     "code": "todoist",  # codename / ID of importer
     "name": "Todoist",  # name of application
@@ -35,6 +36,7 @@ SPEC = {
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Todoist"
+
 
 # main method called by Nozbe app
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Exception]:
@@ -53,7 +55,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                 )
             ),
             RLProxy(TodoistAPI(auth_token)),
-            TodoistAPISync(auth_token,api_version="v9"),
+            TodoistAPISync(auth_token, api_version="v9"),
             team_id,
             nt_auth_token,
         )
@@ -86,13 +88,16 @@ def _import_data(
                 is_open=True,
                 extra="",
             )
-            nt_project = (
-                exists("projects", name, imported)
-                or nt_project_api.post_project(strip_readonly(project_model))
-                or {}
-            )
+            try:
+                nt_project = (
+                    exists("projects", name, imported)
+                    or nt_project_api.post_project(strip_readonly(project_model))
+                    or {}
+                )
+            except Exception:
+                return
 
-            if not (nt_project_id := str(nt_project.get("id"))):
+            if not (nt_project_id := nt_project and str(nt_project.get("id"))):
                 return
             add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Todoist")
         else:
@@ -129,15 +134,14 @@ def _import_members(
 ):
     """Import members into Nozbe"""
     return  # TODO
-    nt_team_members_api = apis.TeamMembersApi(nt_client)
-    active_nt_members = sum(
-        [True for elt in nt_team_members_api.get_team_members() if elt.get("status") == "active"]
-    )
-    uniq_emails = set()
-    for project in todoist_projects:
-        uniq_emails.update(todoist_members(todoist_client, project.id).values())
-    uniq_emails -= set(nt_members_by_email(nt_client)[0])
-    print(f"would import {uniq_emails=}")
+    # nt_team_members_api = apis.TeamMembersApi(nt_client)
+    # active_nt_members =sum([True for elt in nt_team_members_api.get_team_members()
+    # if elt.get("status") == "active"])
+    # uniq_emails = set()
+    # for project in todoist_projects:
+    #     uniq_emails.update(todoist_members(todoist_client, project.id).values())
+    # uniq_emails -= set(nt_members_by_email(nt_client)[0])
+    # print(f"would import {uniq_emails=}")
     # TODO
     # check_limits(
     # nt_auth_token,
