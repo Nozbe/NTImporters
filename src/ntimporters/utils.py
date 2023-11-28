@@ -160,9 +160,6 @@ def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
             for elt in already_imported
             if elt[0] == rtype
         }
-    # from pprint import pprint
-    #
-    # pprint(entities)
     return entities
 
 
@@ -341,6 +338,8 @@ def match_nt_users(nt_client, emails: list) -> dict:
     ]
     pairs = []
     for email in emails:
+        if not email:
+            continue
         for nt_user in nt_users:
             l_email = email.lower()
             if nt_user[0] == l_email or nt_user[0] == md5(l_email, nt_user[1]):
