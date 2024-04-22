@@ -17,7 +17,7 @@ HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = f"https://{HOST}.nozbe.com/v1/api"
-#API_HOST = f"http://localhost:8888/v1/api"
+# API_HOST = f"http://localhost:8888/v1/api"
 
 
 def id16():
@@ -33,12 +33,7 @@ def subscribe_trial(api_key: str, nt_team_id: str, members_len: int = 1) -> bool
     """Return True if trial has been subscribed"""
     resp = requests.patch(
         "/".join((API_HOST.removesuffix("/api"), "teams", nt_team_id, "plan")),
-        json={
-            "members_len": members_len,
-            "plan_type": "trial",
-            "is_recurring": False,
-            "creds": 0,
-        },
+        json={"members_len": members_len, "plan_type": "trial", "is_recurring": False, "creds": 0},
         headers={"Authorization": f"Apikey {api_key}", "API-Version": "current"},
     )
     return resp.status_code == 200
