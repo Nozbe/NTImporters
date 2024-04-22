@@ -57,7 +57,6 @@ def run_import(
             team_id,
             nt_auth_token,
         )
-
     except Exception as exc:
         return exc
     return None
