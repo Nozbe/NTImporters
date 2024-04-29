@@ -69,24 +69,28 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                 access_token=nt_auth_token,
             )
         )
-        asana_client = asana.Client.access_token(auth_token)
+        conf = asana.Configuration()
+        conf.access_token = auth_token
+        asana_client = asana.ApiClient(conf)
         _import_data(nt_client, asana_client, team_id, nt_auth_token)
     except Exception as exc:
         return exc
     return None
 
 
-def _asana_projects_len(asana_client: asana.Client) -> int:
+def _asana_projects_len(asana_client: asana.ApiClient) -> int:
     """Get number of asana projects"""
     total = 0
-    for workspace in asana_client.workspaces.find_all(full_payload=True):
-        total += len(list(asana_client.projects.find_by_workspace(workspace["gid"])))
+    for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
+        total += len(
+            list(asana.ProjectsApi(asana_client).get_projects_for_workspace(workspace["gid"], {}))
+        )
 
     return total
 
 
 def _import_data(
-    nt_client: nt.ApiClient, asana_client: asana.Client, team_id: str, nt_auth_token: str
+    nt_client: nt.ApiClient, asana_client: asana.ApiClient, team_id: str, nt_auth_token: str
 ):
     """Import everything from Asana to Nozbe"""
     nt_api_projects = apis.ProjectsApi(nt_client)
@@ -100,13 +104,13 @@ def _import_data(
         "projects_open",
         _asana_projects_len(asana_client) + nt_open_projects_len(nt_client, team_id),
     )
-
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
-    for workspace in asana_client.workspaces.find_all(full_payload=True):
+    for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
         # import tags
         map_tag_id = {}
-        for tag in asana_client.tags.find_by_workspace(workspace["gid"]):
-            tag_full = asana_client.tags.find_by_id(tag["gid"])
+        tags_api = asana.TagsApi(asana_client)
+        for tag in tags_api.get_tags_for_workspace(workspace["gid"], {}):
+            tag_full = tags_api.get_tag(tag["gid"], {})
             tag_name = tag_full.get("name", "")
             nt_tag = exists("tags", tag_name, imported)
             if nt_tag_id := nt_tag.get("id") or post_tag(
@@ -115,8 +119,9 @@ def _import_data(
                 map_tag_id[tag["gid"]] = str(nt_tag_id)
 
         # import projects
-        for project in asana_client.projects.find_by_workspace(workspace["gid"]):
-            project_full = asana_client.projects.find_by_id(project["gid"])
+        projects_api = asana.ProjectsApi(asana_client)
+        for project in projects_api.get_projects_for_workspace(workspace["gid"], {}):
+            project_full = projects_api.get_project(project["gid"], {})
             nt_project = exists(
                 "projects", project_name := trim(project_full.get("name", "")), imported
             ) or nt_api_projects.post_project(
@@ -144,10 +149,11 @@ def _import_data(
 
             # import project sections
             map_section_id = {}
+            sections_api = asana.SectionsApi(asana_client)
             for position, section in enumerate(
-                asana_client.sections.find_by_project(project["gid"])
+                sections_api.get_sections_for_project(project["gid"], {})
             ):
-                section_full = asana_client.sections.find_by_id(section["gid"])
+                section_full = sections_api.get_section(section["gid"], {})
                 if section_full.get("name") == "Untitled section":
                     continue
                 try:
@@ -171,14 +177,15 @@ def _import_data(
                     )
                     if nt_section:
                         map_section_id[section["gid"]] = str(nt_section.get("id"))
-                except OpenApiException:
+                except OpenApiException as f:
+                    print(f)
                     pass
 
             # import project tasks
             _import_tasks(
                 nt_client,
                 asana_client,
-                asana_client.tasks.find_by_project(project["gid"]),
+                asana.TasksApi(asana_client).get_tasks_for_project(project["gid"], {}),
                 nt_project_id,
                 map_section_id,
                 map_tag_id,
@@ -187,11 +194,13 @@ def _import_data(
             )
 
         # import loose tasks to Single Tasks project
-        me = asana_client.users.me()
+        me = asana.UsersApi(asana_client).get_user("me", {})
         _import_tasks(
             nt_client,
             asana_client,
-            asana_client.tasks.find_all({"workspace": workspace["gid"], "assignee": me["gid"]}),
+            asana.TasksApi(asana_client).get_tasks(
+                {"workspace": workspace["gid"], "assignee": me["gid"]}
+            ),
             get_single_tasks_project_id(nt_client, team_id),
             {},
             map_tag_id,
@@ -203,14 +212,14 @@ def _import_data(
 
 @functools.cache
 def _get_asana_email_by_gid(asana_client, gid):
-    if user := asana_client.users.get_user(gid, opt_fields="email"):
+    if user := asana.UsersApi(asana_client).get_user(gid, {"opt_fields": "email"}):
         return user.get("email")
     return None
 
 
 def _import_tasks(
     nt_client: nt.ApiClient,
-    asana_client: asana.Client,
+    asana_client: asana.ApiClient,
     asana_tasks: list,
     nt_project_id: str,
     map_section_id: dict,
@@ -239,7 +248,7 @@ def _import_tasks(
         return None
 
     for task in asana_tasks:
-        task_full = asana_client.tasks.find_by_id(task["gid"])
+        task_full = asana.TasksApi(asana_client).get_task(task["gid"], {})
         due_at = parse_timestamp(task_full.get("due_at")) or parse_timestamp(
             task_full.get("due_on")
         )
@@ -319,8 +328,8 @@ def _import_tasks(
         ):
             _post_comment(task_description, nt_task_id)
         checklist = []
-        for item in asana_client.tasks.get_subtasks_for_task(
-            task["gid"], opt_fields="name,completed"
+        for item in asana.TasksApi(asana_client).get_subtasks_for_task(
+            task["gid"], {"opt_fields": "name,completed"}
         ):
             checked = "- [ ]" if not item.get("completed") else "- [x]"
             checklist.append(f"{checked} {item.get('name')}")
@@ -330,7 +339,7 @@ def _import_tasks(
             if not exists("comments", body, imported):
                 _post_comment(body, nt_task_id)
 
-        for story in asana_client.stories.find_by_task(task["gid"]):
+        for story in asana.StoriesApi(asana_client).get_stories_for_task(task["gid"], {}):
             if (body := story.get("type")) == "comment" and not exists("comments", body, imported):
                 _post_comment(story.get("text"), nt_task_id)
 
@@ -358,9 +367,11 @@ def asana_users(asana_client):
     """Get asana users from all workspaces"""
     users = []
 
-    for workspace in asana_client.workspaces.find_all(full_payload=False):
+    for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
         users += list(
-            asana_client.users.find_by_workspace(workspace.get("gid"), opt_fields="email")
+            asana.UsersApi(asana_client).get_users_for_workspace(
+                workspace.get("gid"), {"opt_fields": "email"}
+            )
         )
     # gid,email
     return users
