@@ -17,7 +17,7 @@ setup(
     license="MIT",
     install_requires=[
         "python_dateutil",
-        "asana<=5.0.6",
+        "asana>=5.0.6",
         "todoist-api-python",
         "todoist-python",
     ],
