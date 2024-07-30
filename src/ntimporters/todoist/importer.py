@@ -20,7 +20,6 @@ from ntimporters.utils import (
     nt_open_projects_len,
     post_tag,
     set_unassigned_tag,
-    strip_readonly,
     trim,
 )
 from openapi_client import models
@@ -94,7 +93,7 @@ def _import_data(
             try:
                 nt_project = (
                     exists("projects", name, imported)
-                    or nt_project_api.post_project(strip_readonly(project_model))
+                    or nt_project_api.post_project(project_model)
                     or {}
                 )
             except Exception:
@@ -181,14 +180,12 @@ def _import_project_sections(
                 if nt_section := exists(
                     "project_sections", name := trim(section.name), imported
                 ) or nt_api_sections.post_project_section(
-                    strip_readonly(
-                        models.ProjectSection(
-                            id16(),
-                            nt_project_id,
-                            name,
-                            1,
-                            position=float(section.order),
-                        )
+                    models.ProjectSection(
+                        id16(),
+                        nt_project_id,
+                        name,
+                        1,
+                        position=float(section.order),
                     )
                 ):
                     mapping[section.id] = str(nt_section.get("id"))
@@ -268,23 +265,21 @@ def _import_tasks(
         if nt_task := exists(
             "tasks", name := trim(task.get("content", "")), imported
         ) or nt_api_tasks.post_task(
-            strip_readonly(
-                models.Task(
-                    is_followed=False,
-                    is_abandoned=False,
-                    name=name,
-                    project_id=nt_project_id,
-                    author_id=id16(),
-                    missed_repeats=0,
-                    created_at=1,
-                    last_activity_at=1,
-                    project_section_id=sections_mapping.get(task.get("section_id")),
-                    project_position=float(task.get("order") or 1),
-                    due_at=due_at,
-                    is_all_day=is_all_day,
-                    responsible_id=responsible_id,
-                    ended_at=_parse_timestamp(task.get("completed_date"))[0],
-                )
+            models.Task(
+                is_followed=False,
+                is_abandoned=False,
+                name=name,
+                project_id=nt_project_id,
+                author_id=id16(),
+                missed_repeats=0,
+                created_at=1,
+                last_activity_at=1,
+                project_section_id=sections_mapping.get(task.get("section_id")),
+                project_position=float(task.get("order") or 1),
+                due_at=due_at,
+                is_all_day=is_all_day,
+                responsible_id=responsible_id,
+                ended_at=_parse_timestamp(task.get("completed_date"))[0],
             )
         ):
             if not is_sap and should_set_tag:
@@ -318,12 +313,10 @@ def _import_tags_assignments(
         if nt_tag_id := tags_mapping.get(str(tag_id)):
             try:
                 nt_api_tag_assignments.post_tag_assignment(
-                    strip_readonly(
-                        models.TagAssignment(
-                            id=id16(),
-                            tag_id=nt_tag_id,
-                            task_id=nt_task_id,
-                        )
+                    models.TagAssignment(
+                        id=id16(),
+                        tag_id=nt_tag_id,
+                        task_id=nt_task_id,
                     )
                 )
             except Exception:
@@ -374,16 +367,14 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imp
     for comment in comments:
         if not exists("comments", body := str(comment.content or "…"), imported):
             nt_api_comments.post_comment(
-                strip_readonly(
-                    models.Comment(
-                        is_team=False,
-                        is_pinned=False,
-                        body=body,
-                        task_id=nt_task_id,
-                        author_id=id16(),
-                        created_at=1,
-                        # FIXME impossible to set ReadOnly for current API impl
-                        extra="",
-                    )
+                models.Comment(
+                    is_team=False,
+                    is_pinned=False,
+                    body=body,
+                    task_id=nt_task_id,
+                    author_id=id16(),
+                    created_at=1,
+                    # FIXME impossible to set ReadOnly for current API impl
+                    extra="",
                 )
             )

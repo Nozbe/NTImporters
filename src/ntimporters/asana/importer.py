@@ -19,7 +19,6 @@ from ntimporters.utils import (
     parse_timestamp,
     post_tag,
     set_unassigned_tag,
-    strip_readonly,
     trim,
 )
 from openapi_client import models
@@ -128,19 +127,17 @@ def _import_data(
             nt_project = exists(
                 "projects", project_name := trim(project_full.get("name", "")), imported
             ) or nt_api_projects.post_project(
-                strip_readonly(
-                    models.Project(
-                        name=project_name,
-                        team_id=team_id,
-                        author_id=id16(),
-                        created_at=1,
-                        last_event_at=1,
-                        ended_at=1 if project_full.get("archived") else None,
-                        color=_map_color(project_full.get("color")),
-                        is_open=True,  # TODO set is_open based on 'public' and 'members' properties
-                        is_template=False,
-                        sidebar_position=1.0,
-                    )
+                models.Project(
+                    name=project_name,
+                    team_id=team_id,
+                    author_id=id16(),
+                    created_at=1,
+                    last_event_at=1,
+                    ended_at=1 if project_full.get("archived") else None,
+                    color=_map_color(project_full.get("color")),
+                    is_open=True,  # TODO set is_open based on 'public' and 'members' properties
+                    is_template=False,
+                    sidebar_position=1.0,
                 )
             )
             if not nt_project:
@@ -163,15 +160,13 @@ def _import_data(
                         name := trim(section_full.get("name", "")),
                         imported,
                     ) or nt_api_sections.post_project_section(
-                        strip_readonly(
-                            models.ProjectSection(
-                                id=id16(),
-                                project_id=nt_project_id,
-                                name=name,
-                                created_at=1,
-                                archived_at=1 if section_full.get("archived") else None,
-                                position=float(position),
-                            )
+                        models.ProjectSection(
+                            id=id16(),
+                            project_id=nt_project_id,
+                            name=name,
+                            created_at=1,
+                            archived_at=1 if section_full.get("archived") else None,
+                            position=float(position),
                         )
                     )
                     if nt_section:
@@ -266,22 +261,20 @@ def _import_tasks(
         nt_task = exists(
             "tasks", name := trim(task_full.get("name", "")), imported
         ) or nt_api_tasks.post_task(
-            strip_readonly(
-                models.Task(
-                    name=name,
-                    missed_repeats=0,
-                    is_followed=False,
-                    is_abandoned=False,
-                    project_id=nt_project_id,
-                    author_id=id16(),
-                    created_at=1,
-                    last_activity_at=1,
-                    project_section_id=_map_section_id(task_full, map_section_id),
-                    due_at=due_at,
-                    responsible_id=responsible_id,
-                    is_all_day=not task_full.get("due_at"),
-                    ended_at=parse_timestamp(task_full.get("completed_at")),
-                )
+            models.Task(
+                name=name,
+                missed_repeats=0,
+                is_followed=False,
+                is_abandoned=False,
+                project_id=nt_project_id,
+                author_id=id16(),
+                created_at=1,
+                last_activity_at=1,
+                project_section_id=_map_section_id(task_full, map_section_id),
+                due_at=due_at,
+                responsible_id=responsible_id,
+                is_all_day=not task_full.get("due_at"),
+                ended_at=parse_timestamp(task_full.get("completed_at")),
             )
         )
         if not nt_task:
@@ -294,12 +287,10 @@ def _import_tasks(
         for tag in task_full.get("tags") or []:
             try:
                 nt_api_tag_assignments.post_tag_assignment(
-                    strip_readonly(
-                        models.TagAssignment(
-                            id=id16(),
-                            tag_id=map_tag_id.get(tag["gid"]),
-                            task_id=nt_task_id,
-                        )
+                    models.TagAssignment(
+                        id=id16(),
+                        tag_id=map_tag_id.get(tag["gid"]),
+                        task_id=nt_task_id,
                     )
                 )
             except Exception:
@@ -309,16 +300,14 @@ def _import_tasks(
 
         def _post_comment(body, task_id):
             nt_api_comments.post_comment(
-                strip_readonly(
-                    models.Comment(
-                        body=body or "…",
-                        is_team=False,
-                        is_pinned=False,
-                        extra="",
-                        task_id=task_id,
-                        author_id=id16(),
-                        created_at=1,
-                    )
+                models.Comment(
+                    body=body or "…",
+                    is_team=False,
+                    is_pinned=False,
+                    extra="",
+                    task_id=task_id,
+                    author_id=id16(),
+                    created_at=1,
                 )
             )
 

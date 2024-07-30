@@ -19,7 +19,6 @@ from ntimporters.utils import (
     parse_timestamp,
     post_tag,
     set_unassigned_tag,
-    strip_readonly,
     trim,
 )
 from openapi_client import models
@@ -88,9 +87,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
             extra="",
         )
         nt_project = (
-            exists("projects", name, imported)
-            or projects_api.post_project(strip_readonly(project_model))
-            or {}
+            exists("projects", name, imported) or projects_api.post_project(project_model) or {}
         )
 
         if not (nt_project_id := nt_project and str(nt_project.get("id"))):
@@ -151,15 +148,13 @@ def _import_project_sections(
         try:
             nt_section = exists("project_sections", name := trim(section.get("name", "")), imported)
             if nt_section := nt_section or nt_api_sections.post_project_section(
-                strip_readonly(
-                    models.ProjectSection(
-                        id16(),
-                        nt_project_id,
-                        name,
-                        1,
-                        archived_at=1 if section.get("closed") else None,
-                        position=float(j),
-                    )
+                models.ProjectSection(
+                    id16(),
+                    nt_project_id,
+                    name,
+                    1,
+                    archived_at=1 if section.get("closed") else None,
+                    position=float(j),
                 )
             ):
                 nt_section_id = nt_section.id
@@ -185,28 +180,24 @@ def _import_project_sections(
 
             nt_task = exists("tasks", name := trim(task.get("name", "")), imported)
             if nt_task := nt_task or nt_api_tasks.post_task(
-                strip_readonly(
-                    models.Task(
-                        name=name,
-                        project_id=nt_project_id,
-                        author_id=id16(),
-                        created_at=1,
-                        last_activity_at=1,
-                        project_section_id=str(nt_section_id),
-                        project_position=float(i),
-                        due_at=parse_timestamp(task.get("due")),
-                        responsible_id=responsible_id,
-                        is_all_day=False,  # trello due at has to be specified with time
-                        is_followed=False,
-                        is_abandoned=False,
-                        missed_repeats=0,
-                        ended_at=(
-                            None
-                            if not task.get("dueComplete")
-                            else parse_timestamp(task.get("due"))
-                        ),
-                        # there is no ended_at time @ trello
-                    )
+                models.Task(
+                    name=name,
+                    project_id=nt_project_id,
+                    author_id=id16(),
+                    created_at=1,
+                    last_activity_at=1,
+                    project_section_id=str(nt_section_id),
+                    project_position=float(i),
+                    due_at=parse_timestamp(task.get("due")),
+                    responsible_id=responsible_id,
+                    is_all_day=False,  # trello due at has to be specified with time
+                    is_followed=False,
+                    is_abandoned=False,
+                    missed_repeats=0,
+                    ended_at=(
+                        None if not task.get("dueComplete") else parse_timestamp(task.get("due"))
+                    ),
+                    # there is no ended_at time @ trello
                 )
             ):
                 if task.get("due") and not responsible_id:
@@ -259,12 +250,10 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
                 continue
             try:
                 nt_api_tag_assignments.post_tag_assignment(
-                    strip_readonly(
-                        models.TagAssignment(
-                            id=id16(),
-                            tag_id=nt_tag_id,
-                            task_id=nt_task_id,
-                        )
+                    models.TagAssignment(
+                        id=id16(),
+                        tag_id=nt_tag_id,
+                        task_id=nt_task_id,
                     )
                 )
                 assigned.append(nt_tag_id)
@@ -283,16 +272,14 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
     for comment in comments:
         if not exists("comments", body := comment.get("text") or "…", imported):
             nt_api_comments.post_comment(
-                strip_readonly(
-                    models.Comment(
-                        body=body,
-                        task_id=nt_task_id,
-                        author_id=id16(),
-                        created_at=1,
-                        is_team=False,
-                        is_pinned=False,
-                        extra="",
-                    )
+                models.Comment(
+                    body=body,
+                    task_id=nt_task_id,
+                    author_id=id16(),
+                    created_at=1,
+                    is_team=False,
+                    is_pinned=False,
+                    extra="",
                 )
             )
 
@@ -325,7 +312,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 #             color="avatarColor1",
 #             is_placeholder=True,
 #         )
-#         if nt_user := apis.UsersApi(nt_client).post_user(strip_readonly(user_model)):
+#         if nt_user := apis.UsersApi(nt_client).post_user(user_model):
 #             team_member_model = models.TeamMember(
 #                 id=id16(),
 #                 team_id=models.Id16(team_id),
@@ -334,5 +321,5 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 #                 status="pending",
 #             )
 #             nt_member = apis.TeamMembersApi(nt_client).post_team_member(
-#                 strip_readonly(team_member_model)
+#                 team_member_model
 #             )

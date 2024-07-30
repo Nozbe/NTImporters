@@ -67,22 +67,6 @@ def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, curr
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
 
-def strip_readonly(model):
-    """Strip read only fields before sending to server"""
-    return model
-    # for field in [
-    #     elt
-    #     for elt in model.attribute_map.values()
-    #     if hasattr(model, elt)
-    #     and isinstance(
-    #         getattr(model, elt),
-    #         (models.Id16ReadOnly, models.Id16ReadOnlyNullable, models.TimestampReadOnly),
-    #     )
-    # ]:
-    #     del model.__dict__.get("_data_store")[field]
-    # return model
-
-
 def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
     """Get project group id if any"""
     st_groups = _get_with_query(
@@ -172,19 +156,13 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
     try:
         if not group_id and (
             group := apis.ProjectGroupsApi(nt_client).post_project_group(
-                strip_readonly(
-                    models.ProjectGroup(name=group_name, team_id=team_id, is_private=True)
-                )
+                models.ProjectGroup(name=group_name, team_id=team_id, is_private=True)
             )
         ):
             group_id = group.get("id")
         if group_id:
-            assignment = strip_readonly(
-                models.GroupAssignment(
-                    object_id=str(project_id),
-                    group_id=str(group_id),
-                    group_type="project",
-                )
+            assignment = models.GroupAssignment(
+                object_id=str(project_id), group_id=str(group_id), group_type="project"
             )
             apis.GroupAssignmentsApi(nt_client).post_group_assignment(assignment)
     except Exception:
@@ -199,12 +177,10 @@ def set_unassigned_tag(nt_client, task_id: str):
     )
     tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
     if tag_id:
-        assignment = strip_readonly(
-            models.TagAssignment(
-                id=id16(),
-                tag_id=str(tag_id),
-                task_id=str(task_id),
-            )
+        assignment = models.TagAssignment(
+            id=id16(),
+            tag_id=str(tag_id),
+            task_id=str(task_id),
         )
         try:
             apis.TagAssignmentsApi(nt_client).post_tag_assignment(assignment)
@@ -311,12 +287,10 @@ def post_tag(nt_client, tag_name: str, color: str):
     """Post tag to Nozbe"""
     try:
         nt_tag = apis.TagsApi(nt_client).post_tag(
-            strip_readonly(
-                models.Tag(
-                    id16(),
-                    trim(tag_name),
-                    color=map_color(color),
-                )
+            models.Tag(
+                id16(),
+                trim(tag_name),
+                color=map_color(color),
             )
         )
         return str(nt_tag.id) if nt_tag else None
