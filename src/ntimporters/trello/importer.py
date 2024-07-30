@@ -1,4 +1,5 @@
 """Trello -> Nozbe importer"""
+
 from typing import Optional
 
 import openapi_client as nt
@@ -21,7 +22,8 @@ from ntimporters.utils import (
     strip_readonly,
     trim,
 )
-from openapi_client import apis, models
+from openapi_client import models
+from openapi_client import api as apis
 from openapi_client.exceptions import OpenApiException
 
 SPEC = {
@@ -51,6 +53,7 @@ def run_import(
                 configuration=nt.Configuration(
                     host=API_HOST,
                     api_key={"ApiKeyAuth": nt_auth_token},
+                    username=nt_auth_token.split("_")[0],
                 )
             ),
             TrelloClient(app_key, auth_token),
@@ -71,12 +74,12 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
     def _import_project(project: dict, curr_member: str):
         """Import trello project"""
         project_model = models.Project(
-            name=models.NameAllowEmpty(name := trim(project.get("name", ""))),
+            name=(name := trim(project.get("name", ""))),
             is_template=False,
-            team_id=models.Id16(team_id),
-            author_id=models.Id16ReadOnly(id16()),
-            created_at=models.TimestampReadOnly(1),
-            last_event_at=models.TimestampReadOnly(1),
+            team_id=team_id,
+            author_id=id16(),
+            created_at=1,
+            last_event_at=1,
             color=map_color(project.get("backgroundTopColor")),
             description=str(project.get("desc") or ""),
             is_favorite=project.get("is_fav"),
@@ -150,11 +153,11 @@ def _import_project_sections(
             if nt_section := nt_section or nt_api_sections.post_project_section(
                 strip_readonly(
                     models.ProjectSection(
-                        models.Id16ReadOnly(id16()),
-                        models.Id16(nt_project_id),
-                        models.Name(name),
-                        models.TimestampReadOnly(1),
-                        archived_at=models.TimestampNullable(1) if section.get("closed") else None,
+                        id16(),
+                        nt_project_id,
+                        name,
+                        1,
+                        archived_at=1 if section.get("closed") else None,
                         position=float(j),
                     )
                 )
@@ -184,12 +187,12 @@ def _import_project_sections(
             if nt_task := nt_task or nt_api_tasks.post_task(
                 strip_readonly(
                     models.Task(
-                        name=models.Name(name),
-                        project_id=models.ProjectId(nt_project_id),
-                        author_id=models.Id16ReadOnly(id16()),
-                        created_at=models.TimestampReadOnly(1),
-                        last_activity_at=models.TimestampReadOnly(1),
-                        project_section_id=models.Id16Nullable(str(nt_section_id)),
+                        name=name,
+                        project_id=nt_project_id,
+                        author_id=id16(),
+                        created_at=1,
+                        last_activity_at=1,
+                        project_section_id=str(nt_section_id),
                         project_position=float(i),
                         due_at=parse_timestamp(task.get("due")),
                         responsible_id=responsible_id,
@@ -197,9 +200,11 @@ def _import_project_sections(
                         is_followed=False,
                         is_abandoned=False,
                         missed_repeats=0,
-                        ended_at=None
-                        if not task.get("dueComplete")
-                        else parse_timestamp(task.get("due")),
+                        ended_at=(
+                            None
+                            if not task.get("dueComplete")
+                            else parse_timestamp(task.get("due"))
+                        ),
                         # there is no ended_at time @ trello
                     )
                 )
@@ -256,9 +261,9 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
                 nt_api_tag_assignments.post_tag_assignment(
                     strip_readonly(
                         models.TagAssignment(
-                            id=models.Id16ReadOnly(id16()),
-                            tag_id=models.Id16(nt_tag_id),
-                            task_id=models.Id16(nt_task_id),
+                            id=id16(),
+                            tag_id=nt_tag_id,
+                            task_id=nt_task_id,
                         )
                     )
                 )
@@ -281,9 +286,9 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
                 strip_readonly(
                     models.Comment(
                         body=body,
-                        task_id=models.Id16(nt_task_id),
-                        author_id=models.Id16ReadOnly(id16()),
-                        created_at=models.TimestampReadOnly(1),
+                        task_id=nt_task_id,
+                        author_id=id16(),
+                        created_at=1,
                         is_team=False,
                         is_pinned=False,
                         extra="",
@@ -314,7 +319,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 #     for email in emails_to_invite:
 #         print("inviting", email)
 #         user_model = models.User(
-#             id=models.Id16ReadOnly(id16()),
+#             id=id16(),
 #             invitation_email=email,
 #             name=models.Name(email),
 #             color="avatarColor1",
@@ -322,7 +327,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 #         )
 #         if nt_user := apis.UsersApi(nt_client).post_user(strip_readonly(user_model)):
 #             team_member_model = models.TeamMember(
-#                 id=models.Id16ReadOnly(id16()),
+#                 id=id16(),
 #                 team_id=models.Id16(team_id),
 #                 user_id=models.Id16(str(nt_user.id)),
 #                 role="member",

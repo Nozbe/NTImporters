@@ -1,4 +1,5 @@
 """Asana -> Nozbe importer"""
+
 import functools
 from typing import Optional
 
@@ -21,7 +22,8 @@ from ntimporters.utils import (
     strip_readonly,
     trim,
 )
-from openapi_client import apis, models
+from openapi_client import models
+from openapi_client import api as apis
 from openapi_client.exceptions import OpenApiException
 
 import asana
@@ -67,6 +69,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                 host=API_HOST,
                 api_key={"ApiKeyAuth": nt_auth_token},
                 access_token=nt_auth_token,
+                username=nt_auth_token.split("_")[0],
             )
         )
         conf = asana.Configuration()
@@ -127,14 +130,12 @@ def _import_data(
             ) or nt_api_projects.post_project(
                 strip_readonly(
                     models.Project(
-                        name=models.NameAllowEmpty(project_name),
-                        team_id=models.Id16(team_id),
-                        author_id=models.Id16ReadOnly(id16()),
-                        created_at=models.TimestampReadOnly(1),
-                        last_event_at=models.TimestampReadOnly(1),
-                        ended_at=models.TimestampNullable(
-                            1 if project_full.get("archived") else None
-                        ),
+                        name=project_name,
+                        team_id=team_id,
+                        author_id=id16(),
+                        created_at=1,
+                        last_event_at=1,
+                        ended_at=1 if project_full.get("archived") else None,
                         color=_map_color(project_full.get("color")),
                         is_open=True,  # TODO set is_open based on 'public' and 'members' properties
                         is_template=False,
@@ -164,13 +165,11 @@ def _import_data(
                     ) or nt_api_sections.post_project_section(
                         strip_readonly(
                             models.ProjectSection(
-                                id=models.Id16ReadOnly(id16()),
-                                project_id=models.Id16(nt_project_id),
-                                name=models.Name(name),
-                                created_at=models.TimestampReadOnly(1),
-                                archived_at=models.TimestampNullable(1)
-                                if section_full.get("archived")
-                                else None,
+                                id=id16(),
+                                project_id=nt_project_id,
+                                name=name,
+                                created_at=1,
+                                archived_at=1 if section_full.get("archived") else None,
                                 position=float(position),
                             )
                         )
@@ -269,14 +268,14 @@ def _import_tasks(
         ) or nt_api_tasks.post_task(
             strip_readonly(
                 models.Task(
-                    name=models.Name(name),
+                    name=name,
                     missed_repeats=0,
                     is_followed=False,
                     is_abandoned=False,
-                    project_id=models.ProjectId(nt_project_id),
-                    author_id=models.Id16ReadOnly(id16()),
-                    created_at=models.TimestampReadOnly(1),
-                    last_activity_at=models.TimestampReadOnly(1),
+                    project_id=nt_project_id,
+                    author_id=id16(),
+                    created_at=1,
+                    last_activity_at=1,
                     project_section_id=_map_section_id(task_full, map_section_id),
                     due_at=due_at,
                     responsible_id=responsible_id,
@@ -297,9 +296,9 @@ def _import_tasks(
                 nt_api_tag_assignments.post_tag_assignment(
                     strip_readonly(
                         models.TagAssignment(
-                            id=models.Id16ReadOnly(id16()),
-                            tag_id=models.Id16(map_tag_id.get(tag["gid"])),
-                            task_id=models.Id16(nt_task_id),
+                            id=id16(),
+                            tag_id=map_tag_id.get(tag["gid"]),
+                            task_id=nt_task_id,
                         )
                     )
                 )
@@ -316,9 +315,9 @@ def _import_tasks(
                         is_team=False,
                         is_pinned=False,
                         extra="",
-                        task_id=models.Id16(task_id),
-                        author_id=models.Id16ReadOnly(id16()),
-                        created_at=models.TimestampReadOnly(1),
+                        task_id=task_id,
+                        author_id=id16(),
+                        created_at=1,
                     )
                 )
             )
@@ -355,12 +354,12 @@ def _map_color(asana_color: Optional[str]) -> Optional[models.Color]:
     return models.Color(COLOR_MAP.get(asana_color)) if asana_color in COLOR_MAP else None
 
 
-def _map_section_id(asana_task: dict, map_section_id: dict) -> models.Id16Nullable:
+def _map_section_id(asana_task: dict, map_section_id: dict):
     """Maps Asana task's section GID onto NT section ID"""
     if not asana_task or not asana_task.get("memberships"):
         return None
     asana_section = asana_task.get("memberships")[0].get("section")
-    return models.Id16Nullable(asana_section and map_section_id.get(asana_section.get("gid")))
+    return asana_section and map_section_id.get(asana_section.get("gid"))
 
 
 def asana_users(asana_client):

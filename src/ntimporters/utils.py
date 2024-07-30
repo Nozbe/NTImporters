@@ -1,4 +1,5 @@
 """ Common helper functions """
+
 import functools
 import hashlib
 from os import getenv
@@ -9,9 +10,9 @@ from typing import Optional, Tuple
 
 import requests
 from dateutil.parser import isoparse
-from openapi_client import apis, models
-from openapi_client.model.color import Color
-from openapi_client.model_utils import ModelNormal
+from openapi_client import models
+from openapi_client import api as apis
+from openapi_client import Color
 
 HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
@@ -66,19 +67,20 @@ def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, curr
         raise ImportException(f"LIMIT {limit_name} : {current_len} > {limit}")
 
 
-def strip_readonly(model: ModelNormal):
+def strip_readonly(model):
     """Strip read only fields before sending to server"""
-    for field in [
-        elt
-        for elt in model.attribute_map.values()
-        if hasattr(model, elt)
-        and isinstance(
-            getattr(model, elt),
-            (models.Id16ReadOnly, models.Id16ReadOnlyNullable, models.TimestampReadOnly),
-        )
-    ]:
-        del model.__dict__.get("_data_store")[field]
     return model
+    # for field in [
+    #     elt
+    #     for elt in model.attribute_map.values()
+    #     if hasattr(model, elt)
+    #     and isinstance(
+    #         getattr(model, elt),
+    #         (models.Id16ReadOnly, models.Id16ReadOnlyNullable, models.TimestampReadOnly),
+    #     )
+    # ]:
+    #     del model.__dict__.get("_data_store")[field]
+    # return model
 
 
 def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
@@ -171,9 +173,7 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
         if not group_id and (
             group := apis.ProjectGroupsApi(nt_client).post_project_group(
                 strip_readonly(
-                    models.ProjectGroup(
-                        name=models.Name(group_name), team_id=models.Id16(team_id), is_private=True
-                    )
+                    models.ProjectGroup(name=group_name, team_id=team_id, is_private=True)
                 )
             )
         ):
@@ -181,8 +181,8 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
         if group_id:
             assignment = strip_readonly(
                 models.GroupAssignment(
-                    object_id=models.Id16(str(project_id)),
-                    group_id=models.Id16(str(group_id)),
+                    object_id=str(project_id),
+                    group_id=str(group_id),
                     group_type="project",
                 )
             )
@@ -201,9 +201,9 @@ def set_unassigned_tag(nt_client, task_id: str):
     if tag_id:
         assignment = strip_readonly(
             models.TagAssignment(
-                id=models.Id16ReadOnly(id16()),
-                tag_id=models.Id16(str(tag_id)),
-                task_id=models.Id16(str(task_id)),
+                id=id16(),
+                tag_id=str(tag_id),
+                task_id=str(task_id),
             )
         )
         try:
@@ -263,7 +263,7 @@ def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
     """Returns NT Single Tasks's project ID"""
     st_projects = _get_with_query(
         nt_client,
-        apis.ProjectsApi(nt_client).get_projects_endpoint,
+        apis.ProjectsApi(nt_client).get_projects,
         [("team_id", team_id), ("is_single_actions", True)],
     )
     return str(st_projects[0].get("id")) if st_projects and st_projects[0] else None
@@ -280,8 +280,7 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
     nt_members = {
         str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
     }
-    mapping = {}
-    current_user_id = None
+    current_user_id, mapping = nt_client.configuration.username, {}
     for user in apis.UsersApi(nt_client).get_users():
         if hasattr(user, "email") and user.email:
             email = user.email
@@ -289,8 +288,6 @@ def nt_members_by_email(nt_client) -> Tuple[dict, str]:
             email = user.invitation_email
         else:
             continue
-        if bool(user.is_me):
-            current_user_id = str(user.id)
         mapping[str(email)] = nt_members.get(str(user.id))
     return mapping, nt_members.get(current_user_id)
 
@@ -303,11 +300,11 @@ def trim(name: str):
     return name or "Untitled"
 
 
-def parse_timestamp(datetime: Optional[str]) -> Optional[models.TimestampNullable]:
+def parse_timestamp(datetime: Optional[str]):
     """Parses date string into timestamp"""
     if not datetime:
         return None
-    return models.TimestampNullable(int(isoparse(datetime).timestamp() * 1000))
+    return int(isoparse(datetime).timestamp() * 1000)
 
 
 def post_tag(nt_client, tag_name: str, color: str):
@@ -316,8 +313,8 @@ def post_tag(nt_client, tag_name: str, color: str):
         nt_tag = apis.TagsApi(nt_client).post_tag(
             strip_readonly(
                 models.Tag(
-                    models.Id16ReadOnly(id16()),
-                    models.Name(trim(tag_name)),
+                    id16(),
+                    trim(tag_name),
                     color=map_color(color),
                 )
             )

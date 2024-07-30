@@ -1,4 +1,5 @@
 """Monday -> Nozbe importer"""
+
 import re
 from typing import Optional
 
@@ -19,7 +20,8 @@ from ntimporters.utils import (
     strip_readonly,
     trim,
 )
-from openapi_client import apis, models
+from openapi_client import models
+from openapi_client import api as apis
 from openapi_client.exceptions import OpenApiException
 
 SPEC = {
@@ -45,6 +47,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
                 configuration=nt.Configuration(
                     host=API_HOST,
                     api_key={"ApiKeyAuth": nt_auth_token},
+                    username=nt_auth_token.split("_")[0],
                 )
             ),
             MondayClient(app_key),
@@ -68,15 +71,13 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
         if project.get("name", "").startswith("Subitems of"):
             return
         project_model = models.Project(
-            name=models.NameAllowEmpty(name := trim(project.get("name", ""))),
-            team_id=models.Id16(team_id),
-            author_id=models.Id16ReadOnly(id16()),
-            created_at=models.TimestampReadOnly(1),
-            last_event_at=models.TimestampReadOnly(1),
+            name=(name := trim(project.get("name", ""))),
+            team_id=team_id,
+            author_id=id16(),
+            created_at=1,
+            last_event_at=1,
             is_template=False,
-            ended_at=models.TimestampNullable(1)
-            if project.get("state") in ("archived", "deleted")
-            else None,
+            ended_at=1 if project.get("state") in ("archived", "deleted") else None,
             sidebar_position=1.0,
             description=project.get("description"),
             is_open=project.get("board_kind") == "public",
@@ -150,13 +151,11 @@ def _import_project_sections(
             ) or nt_api_sections.post_project_section(
                 strip_readonly(
                     models.ProjectSection(
-                        models.Id16ReadOnly(id16()),
-                        models.Id16(nt_project_id),
-                        models.Name(name),
-                        models.TimestampReadOnly(1),
-                        archived_at=models.TimestampReadOnly(1)
-                        if section.get("archived")
-                        else None,
+                        id16(),
+                        nt_project_id,
+                        name,
+                        1,
+                        archived_at=1 if section.get("archived") else None,
                         position=float(section.get("position") or 1.0),
                     )
                 )
@@ -204,12 +203,12 @@ def _import_tasks(
                     is_followed=False,
                     is_abandoned=False,
                     missed_repeats=0,
-                    name=models.Name(name),
-                    project_id=models.ProjectId(nt_project_id),
-                    author_id=models.Id16ReadOnly(id16()),
-                    created_at=models.TimestampReadOnly(1),
-                    last_activity_at=models.TimestampReadOnly(1),
-                    project_section_id=models.Id16Nullable(sections_mapping.get(task.get("group"))),
+                    name=name,
+                    project_id=nt_project_id,
+                    author_id=id16(),
+                    created_at=1,
+                    last_activity_at=1,
+                    project_section_id=sections_mapping.get(task.get("group")),
                     project_position=float(task.get("position") or 1.0),
                     due_at=task.get("due_at"),
                     is_all_day=task.get("is_all_day"),
@@ -241,9 +240,9 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str,
                         is_pinned=False,
                         is_team=False,
                         body=body,
-                        task_id=models.Id16(nt_task_id),
-                        created_at=models.TimestampReadOnly(1),
-                        author_id=models.Id16ReadOnly(id16()),
+                        task_id=nt_task_id,
+                        created_at=1,
+                        author_id=id16(),
                         extra="",
                     )
                 )
