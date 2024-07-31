@@ -76,6 +76,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
         asana_client = asana.ApiClient(conf)
         _import_data(nt_client, asana_client, team_id, nt_auth_token)
     except Exception as exc:
+        print(exc)
         return exc
     return None
 
@@ -142,7 +143,7 @@ def _import_data(
             )
             if not nt_project:
                 continue
-            nt_project_id = str(nt_project.get("id"))
+            nt_project_id = str(nt_project.id)
             add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
             # import project sections
@@ -170,7 +171,7 @@ def _import_data(
                         )
                     )
                     if nt_section:
-                        map_section_id[section["gid"]] = str(nt_section.get("id"))
+                        map_section_id[section["gid"]] = str(nt_section.id)
                 except OpenApiException as f:
                     print(f)
                     pass
@@ -279,7 +280,7 @@ def _import_tasks(
         )
         if not nt_task:
             continue
-        nt_task_id = str(nt_task.get("id"))
+        nt_task_id = str(nt_task.id)
         if should_set_tag and not is_sap:
             set_unassigned_tag(nt_client, nt_task_id)
 

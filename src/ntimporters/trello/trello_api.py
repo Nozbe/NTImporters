@@ -1,4 +1,5 @@
 """ Simple trello REST API client """
+
 import datetime
 import functools
 
@@ -25,10 +26,8 @@ class TrelloClient:
         self.author_email = str(user_data.get("email"))
         self.boards_ids = user_data.get("idBoards", [])
 
-    def _req(self, suffix, data=None) -> dict:
-        if resp := requests.get(
-            f"{self.api_path}/{suffix}", data=data or {"limit": 1000}, headers=self.headers
-        ):
+    def _req(self, suffix) -> dict:
+        if resp := requests.get(f"{self.api_path}/{suffix}", headers=self.headers):
             return resp.json()
         else:
             raise ImportException(

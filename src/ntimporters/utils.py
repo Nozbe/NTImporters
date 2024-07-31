@@ -1,5 +1,7 @@
 """ Common helper functions """
 
+import string
+import random
 import functools
 import hashlib
 from os import getenv
@@ -23,7 +25,7 @@ API_HOST = f"https://{HOST}.nozbe.com/v1/api"
 
 def id16():
     """Generate random string"""
-    return 16 * "a"
+    return "".join(random.choices(string.ascii_letters + string.digits, k=16))
 
 
 class ImportException(Exception):
@@ -69,12 +71,10 @@ def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, curr
 
 def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
     """Get project group id if any"""
-    st_groups = _get_with_query(
-        nt_client,
-        apis.ProjectGroupsApi(nt_client).get_project_groups_endpoint,
-        [("limit", "1"), ("name", group_name), ("team_id", team_id)],
+    st_groups = apis.ProjectGroupsApi(nt_client).get_project_groups(
+        limit=1, name=group_name, team_id=team_id
     )
-    return str(st_groups[0].get("id")) if st_groups and st_groups[0] else None
+    return str(st_groups[0].id) if st_groups and st_groups[0] else None
 
 
 def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
@@ -102,90 +102,71 @@ def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
     """Get already imported records"""
     already_imported = []
     if group_id := get_group_id(nt_client, team_id, group_name):
-        for pgroup in _get_with_query(
-            nt_client,
-            apis.GroupAssignmentsApi(nt_client).get_group_assignments_endpoint,
-            [("group_id", group_id), ("group_type", "project")],
+        for pgroup in apis.GroupAssignmentsApi(nt_client).get_group_assignments(
+            group_id=group_id, group_type="project"
         ):
-            project = apis.ProjectsApi(nt_client).get_project_by_id(str(pgroup.get("object_id")))
+            project = apis.ProjectsApi(nt_client).get_project_by_id(str(pgroup.object_id))
             already_imported.append(("project", project))
-            for section in _get_with_query(
-                nt_client,
-                apis.ProjectSectionsApi(nt_client).get_project_sections_endpoint,
-                [("project_id", str(project.get("id")))],
+            for section in apis.ProjectSectionsApi(nt_client).get_project_sections(
+                project_id=str(project.id)
             ):
                 already_imported.append(("project_section", section))
-            for task in _get_with_query(
-                nt_client,
-                apis.TasksApi(nt_client).get_tasks_endpoint,
-                [("project_id", str(project.get("id")))],
-            ):
+            for task in apis.TasksApi(nt_client).get_tasks(project_id=str(project.id)):
                 already_imported.append(("task", task))
-                for comment in _get_with_query(
-                    nt_client,
-                    apis.CommentsApi(nt_client).get_comments_endpoint,
-                    [("task_id", str(task.get("id")))],
-                ):
+                for comment in apis.CommentsApi(nt_client).get_comments(task_id=str(task.id)):
                     already_imported.append(("comment", comment))
-                for tag in _get_with_query(
-                    nt_client,
-                    apis.TagsApi(nt_client).get_tags_endpoint,
-                    [("task_id", str(task.get("id")))],
-                ):
+                for tag in apis.TagsApi(nt_client).get_tags(task_id=str(task.id)):
                     already_imported.append(("tag", tag))
     entities = {
         "comments": {
-            str(elt[1].get("body")): Dict({"id": elt[1].get("id")})
+            str(elt[1].body): Dict({"id": elt[1].id})
             for elt in already_imported
             if elt[0] == "comment"
         }
     }
     for rtype in ("task", "tag", "project", "project_section"):
         entities[f"{rtype}s"] = {
-            str(elt[1].get("name")): Dict({"id": elt[1].get("id")})
-            for elt in already_imported
-            if elt[0] == rtype
+            str(elt[1].name): Dict({"id": elt[1].id}) for elt in already_imported if elt[0] == rtype
         }
     return entities
 
 
 def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
     """Add project to project' group"""
-    group_id = get_group_id(nt_client, team_id, group_name)
-
     try:
+        group_id = get_group_id(nt_client, team_id, group_name)
         if not group_id and (
             group := apis.ProjectGroupsApi(nt_client).post_project_group(
-                models.ProjectGroup(name=group_name, team_id=team_id, is_private=True)
+                models.ProjectGroup(id=id16(), name=group_name, team_id=team_id, is_private=True)
             )
         ):
-            group_id = group.get("id")
-        if group_id:
-            assignment = models.GroupAssignment(
-                object_id=str(project_id), group_id=str(group_id), group_type="project"
+            group_id = group.id
+        args = {"object_id": str(project_id), "group_id": str(group_id), "group_type": "project"}
+        if group_id and not apis.GroupAssignmentsApi(nt_client).get_group_assignments(
+            limit=1, **args
+        ):
+            apis.GroupAssignmentsApi(nt_client).post_group_assignment(
+                models.GroupAssignment(id=id16(), **args)
             )
-            apis.GroupAssignmentsApi(nt_client).post_group_assignment(assignment)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(exc)
 
 
 def set_unassigned_tag(nt_client, task_id: str):
     """set 'missing responsibility' tag"""
     tag_name, tag_id = "missing responsibility", None
-    st_tags = _get_with_query(
-        nt_client, apis.TagsApi(nt_client).get_tags_endpoint, [("limit", "1"), ("name", tag_name)]
-    )
-    tag_id = st_tags[0].get("id") if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
+    st_tags = apis.TagsApi(nt_client).get_tags(limit=1, name=tag_name)
+
+    tag_id = st_tags[0].id if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
     if tag_id:
-        assignment = models.TagAssignment(
-            id=id16(),
-            tag_id=str(tag_id),
-            task_id=str(task_id),
-        )
-        try:
-            apis.TagAssignmentsApi(nt_client).post_tag_assignment(assignment)
-        except Exception:
-            pass
+        args = {"tag_id": str(tag_id), "task_id": str(task_id)}
+        if not apis.TagAssignmentsApi(nt_client).get_tag_assignments(**args, limit=1):
+            try:
+                apis.TagAssignmentsApi(nt_client).post_tag_assignment(
+                    models.TagAssignment(id=id16(), **args)
+                )
+            except Exception as exc:
+                print(exc)
 
 
 def nt_limits(nt_client, team_id: str):
@@ -197,52 +178,33 @@ def nt_limits(nt_client, team_id: str):
 
 def map_color(color: Optional[str]) -> Color:
     """Maps color onto Nozbe color"""
-    colors = list(list(Color.allowed_values.values())[0].values())
+    colors = [c.value for c in list(Color)]
     colors.remove("null")
     return Color(color if color in colors else random.choice(colors))  # nosec
 
 
 def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
     """Get team-related projects"""
-    # temporary solution
     nt_project_api = apis.ProjectsApi(nt_client)
     return [
-        project
+        dict(project)
         for project in nt_project_api.get_projects(
+            team_id=team_id,
             limit=10000,
             fields=(
                 "id,name,author_id,created_at,last_event_at,ended_at,"
                 "team_id,is_open,is_single_actions"
             ),
         )
-        if str(project.team_id) == team_id
     ]
-
-
-def _get_with_query(nt_client, api, query: list):
-    settings = api.settings
-    return nt_client.call_api(
-        settings["endpoint_path"],
-        settings["http_method"],
-        None,
-        query,
-        {"Accept": "application/json"},
-        response_type=settings["response_type"],
-        auth_settings=settings["auth"],
-        _check_type=True,
-        _return_http_data_only=True,
-        _preload_content=True,
-    )
 
 
 def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
     """Returns NT Single Tasks's project ID"""
-    st_projects = _get_with_query(
-        nt_client,
-        apis.ProjectsApi(nt_client).get_projects,
-        [("team_id", team_id), ("is_single_actions", True)],
+    st_projects = apis.ProjectsApi(nt_client).get_projects(
+        limit=1, team_id=team_id, is_single_actions=True
     )
-    return str(st_projects[0].get("id")) if st_projects and st_projects[0] else None
+    return str(st_projects[0].id) if st_projects and st_projects[0] else None
 
 
 def current_nt_member(nt_client) -> Optional[str]:
@@ -288,14 +250,14 @@ def post_tag(nt_client, tag_name: str, color: str):
     try:
         nt_tag = apis.TagsApi(nt_client).post_tag(
             models.Tag(
-                id16(),
-                trim(tag_name),
+                id=id16(),
+                name=trim(tag_name),
                 color=map_color(color),
             )
         )
         return str(nt_tag.id) if nt_tag else None
-    except Exception:
-        pass
+    except Exception as exc:
+        print(exc)
     return None
 
 

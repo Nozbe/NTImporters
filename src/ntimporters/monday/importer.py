@@ -85,7 +85,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
         nt_project = (
             exists("projects", name, imported) or projects_api.post_project(project_model) or {}
         )
-        if not (nt_project_id := nt_project and str(nt_project.get("id"))):
+        if not (nt_project_id := nt_project and str(nt_project.id)):
             return
         add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
@@ -147,15 +147,15 @@ def _import_project_sections(
                 "project_sections", name := trim(section.get("title", "")), imported
             ) or nt_api_sections.post_project_section(
                 models.ProjectSection(
-                    id16(),
-                    nt_project_id,
-                    name,
-                    1,
+                    id=id16(),
+                    project_id=nt_project_id,
+                    name=name,
+                    created_at=1,
                     archived_at=1 if section.get("archived") else None,
                     position=float(section.get("position") or 1.0),
                 )
             ):
-                sections_mapping[section.get("id")] = str(nt_section.get("id"))
+                sections_mapping[section.get("id")] = str(nt_section.id)
         except OpenApiException:
             pass
     _import_tasks(

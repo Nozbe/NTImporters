@@ -99,7 +99,7 @@ def _import_data(
             except Exception:
                 return
 
-            if not (nt_project_id := nt_project and str(nt_project.get("id"))):
+            if not (nt_project_id := nt_project and str(nt_project.id)):
                 return
             add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Todoist")
         else:
@@ -181,14 +181,14 @@ def _import_project_sections(
                     "project_sections", name := trim(section.name), imported
                 ) or nt_api_sections.post_project_section(
                     models.ProjectSection(
-                        id16(),
-                        nt_project_id,
-                        name,
-                        1,
+                        id=id16(),
+                        project_id=nt_project_id,
+                        name=name,
+                        created_at=1,
                         position=float(section.order),
                     )
                 ):
-                    mapping[section.id] = str(nt_section.get("id"))
+                    mapping[section.id] = str(nt_section.id)
             except OpenApiException:
                 pass
     _import_tasks(
@@ -326,9 +326,7 @@ def _import_tags_assignments(
 def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) -> dict:
     """Import todoist tags and return name -> NT tag id mapping"""
     nt_api_tags = apis.TagsApi(nt_client)
-    nt_tags = {
-        str(elt.get("name")): str(elt.get("id")) for elt in nt_api_tags.get_tags(fields="id,name")
-    }
+    nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
     check_limits(
         nt_auth_token,
         team_id,

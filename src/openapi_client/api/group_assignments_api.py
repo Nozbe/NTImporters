@@ -17,7 +17,7 @@ from pydantic import validate_call, Field, StrictFloat, StrictStr, StrictInt
 from typing import Any, Dict, List, Optional, Tuple, Union
 from typing_extensions import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, StrictStr, field_validator
 from typing import List, Optional
 from typing_extensions import Annotated
 from openapi_client.models.group_assignment import GroupAssignment
@@ -578,6 +578,9 @@ class GroupAssignmentsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        object_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Object ID")] = None,
+        group_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Group ID")] = None,
+        group_type: Annotated[Optional[StrictStr], Field(description="Group type")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -602,6 +605,12 @@ class GroupAssignmentsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param object_id: Object ID
+        :type object_id: str
+        :param group_id: Group ID
+        :type group_id: str
+        :param group_type: Group type
+        :type group_type: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -629,6 +638,9 @@ class GroupAssignmentsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            object_id=object_id,
+            group_id=group_id,
+            group_type=group_type,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -657,6 +669,9 @@ class GroupAssignmentsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        object_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Object ID")] = None,
+        group_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Group ID")] = None,
+        group_type: Annotated[Optional[StrictStr], Field(description="Group type")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -681,6 +696,12 @@ class GroupAssignmentsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param object_id: Object ID
+        :type object_id: str
+        :param group_id: Group ID
+        :type group_id: str
+        :param group_type: Group type
+        :type group_type: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -708,6 +729,9 @@ class GroupAssignmentsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            object_id=object_id,
+            group_id=group_id,
+            group_type=group_type,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -736,6 +760,9 @@ class GroupAssignmentsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        object_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Object ID")] = None,
+        group_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Group ID")] = None,
+        group_type: Annotated[Optional[StrictStr], Field(description="Group type")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -760,6 +787,12 @@ class GroupAssignmentsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param object_id: Object ID
+        :type object_id: str
+        :param group_id: Group ID
+        :type group_id: str
+        :param group_type: Group type
+        :type group_type: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -787,6 +820,9 @@ class GroupAssignmentsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            object_id=object_id,
+            group_id=group_id,
+            group_type=group_type,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -810,6 +846,9 @@ class GroupAssignmentsApi:
         offset,
         sort_by,
         fields,
+        object_id,
+        group_id,
+        group_type,
         _request_auth,
         _content_type,
         _headers,
@@ -845,6 +884,18 @@ class GroupAssignmentsApi:
         if fields is not None:
             
             _query_params.append(('fields', fields))
+            
+        if object_id is not None:
+            
+            _query_params.append(('object_id', object_id))
+            
+        if group_id is not None:
+            
+            _query_params.append(('group_id', group_id))
+            
+        if group_type is not None:
+            
+            _query_params.append(('group_type', group_type))
             
         # process the header parameters
         # process the form parameters

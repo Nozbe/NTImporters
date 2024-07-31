@@ -17,7 +17,7 @@ from pydantic import validate_call, Field, StrictFloat, StrictStr, StrictInt
 from typing import Any, Dict, List, Optional, Tuple, Union
 from typing_extensions import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, StrictStr, field_validator
 from typing import Any, Dict, List, Optional
 from typing_extensions import Annotated
 from openapi_client.models.project_group import ProjectGroup
@@ -578,6 +578,8 @@ class ProjectGroupsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        name: Annotated[Optional[StrictStr], Field(description="Name")] = None,
+        team_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Team ID")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -602,6 +604,10 @@ class ProjectGroupsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param name: Name
+        :type name: str
+        :param team_id: Team ID
+        :type team_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -629,6 +635,8 @@ class ProjectGroupsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            name=name,
+            team_id=team_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -657,6 +665,8 @@ class ProjectGroupsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        name: Annotated[Optional[StrictStr], Field(description="Name")] = None,
+        team_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Team ID")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -681,6 +691,10 @@ class ProjectGroupsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param name: Name
+        :type name: str
+        :param team_id: Team ID
+        :type team_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -708,6 +722,8 @@ class ProjectGroupsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            name=name,
+            team_id=team_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -736,6 +752,8 @@ class ProjectGroupsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        name: Annotated[Optional[StrictStr], Field(description="Name")] = None,
+        team_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Team ID")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -760,6 +778,10 @@ class ProjectGroupsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param name: Name
+        :type name: str
+        :param team_id: Team ID
+        :type team_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -787,6 +809,8 @@ class ProjectGroupsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            name=name,
+            team_id=team_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -810,6 +834,8 @@ class ProjectGroupsApi:
         offset,
         sort_by,
         fields,
+        name,
+        team_id,
         _request_auth,
         _content_type,
         _headers,
@@ -845,6 +871,14 @@ class ProjectGroupsApi:
         if fields is not None:
             
             _query_params.append(('fields', fields))
+            
+        if name is not None:
+            
+            _query_params.append(('name', name))
+            
+        if team_id is not None:
+            
+            _query_params.append(('team_id', team_id))
             
         # process the header parameters
         # process the form parameters

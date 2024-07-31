@@ -60,6 +60,7 @@ def run_import(
             nt_auth_token,
         )
     except Exception as exc:
+        print(exc)
         return exc
     return None
 
@@ -89,8 +90,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
         nt_project = (
             exists("projects", name, imported) or projects_api.post_project(project_model) or {}
         )
-
-        if not (nt_project_id := nt_project and str(nt_project.get("id"))):
+        if not (nt_project_id := nt_project and str(nt_project.id)):
             return
         add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
@@ -149,17 +149,17 @@ def _import_project_sections(
             nt_section = exists("project_sections", name := trim(section.get("name", "")), imported)
             if nt_section := nt_section or nt_api_sections.post_project_section(
                 models.ProjectSection(
-                    id16(),
-                    nt_project_id,
-                    name,
-                    1,
+                    id=id16(),
+                    project_id=nt_project_id,
+                    name=name,
+                    created_at=1,
                     archived_at=1 if section.get("closed") else None,
                     position=float(j),
                 )
             ):
                 nt_section_id = nt_section.id
-        except OpenApiException:
-            pass
+        except OpenApiException as exc:
+            print(exc)
 
         trello_members = trello_client.members_emails() or {}
         nt_users = match_nt_users(nt_client, trello_members.values())
@@ -222,9 +222,7 @@ def _import_tags_per_project(
 ) -> dict:
     """Import trello tags and return name -> NT tag id mapping"""
     nt_api_tags = apis.TagsApi(nt_client)
-    nt_tags = {
-        str(elt.get("name")): str(elt.get("id")) for elt in nt_api_tags.get_tags(fields="id,name")
-    }
+    nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
     check_limits(
         nt_auth_token,
         team_id,
@@ -257,8 +255,8 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
                     )
                 )
                 assigned.append(nt_tag_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                print(exc)
 
 
 def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=None):
