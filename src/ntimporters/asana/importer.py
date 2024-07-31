@@ -21,8 +21,7 @@ from ntimporters.utils import (
     set_unassigned_tag,
     trim,
 )
-from openapi_client import models
-from openapi_client import api as apis
+from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 
 import asana
@@ -96,8 +95,8 @@ def _import_data(
     nt_client: nt.ApiClient, asana_client: asana.ApiClient, team_id: str, nt_auth_token: str
 ):
     """Import everything from Asana to Nozbe"""
-    nt_api_projects = apis.ProjectsApi(nt_client)
-    nt_api_sections = apis.ProjectSectionsApi(nt_client)
+    nt_api_projects = api.ProjectsApi(nt_client)
+    nt_api_sections = api.ProjectSectionsApi(nt_client)
     nt_member_id = current_nt_member(nt_client)
 
     check_limits(
@@ -172,9 +171,8 @@ def _import_data(
                     )
                     if nt_section:
                         map_section_id[section["gid"]] = str(nt_section.id)
-                except OpenApiException as f:
-                    print(f)
-                    pass
+                except OpenApiException as exc:
+                    print(exc)
 
             # import project tasks
             _import_tasks(
@@ -224,9 +222,9 @@ def _import_tasks(
     imported=None,
 ):
     """Import task from Asana to Nozbe"""
-    nt_api_tasks = apis.TasksApi(nt_client)
-    nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
-    nt_api_comments = apis.CommentsApi(nt_client)
+    nt_api_tasks = api.TasksApi(nt_client)
+    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
+    nt_api_comments = api.CommentsApi(nt_client)
     _, nt_member_id = nt_members_by_email(nt_client)
     user_matches = match_nt_users(
         nt_client, [elt.get("email") for elt in asana_users(asana_client)]

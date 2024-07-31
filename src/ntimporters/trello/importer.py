@@ -21,8 +21,7 @@ from ntimporters.utils import (
     set_unassigned_tag,
     trim,
 )
-from openapi_client import models
-from openapi_client import api as apis
+from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 
 SPEC = {
@@ -67,7 +66,7 @@ def run_import(
 
 def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_token: str):
     """Import everything from Trello to Nozbe"""
-    projects_api = apis.ProjectsApi(nt_client)
+    projects_api = api.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
@@ -132,8 +131,8 @@ def _import_project_sections(
     imported=None,
 ):
     """Import trello lists as project sections"""
-    nt_api_sections = apis.ProjectSectionsApi(nt_client)
-    nt_api_tasks = apis.TasksApi(nt_client)
+    nt_api_sections = api.ProjectSectionsApi(nt_client)
+    nt_api_tasks = api.TasksApi(nt_client)
 
     # import project sections
     check_limits(
@@ -221,7 +220,7 @@ def _import_tags_per_project(
     nt_client, trello_client, project: dict, team_id: str, nt_auth_token: str
 ) -> dict:
     """Import trello tags and return name -> NT tag id mapping"""
-    nt_api_tags = apis.TagsApi(nt_client)
+    nt_api_tags = api.TagsApi(nt_client)
     nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
     check_limits(
         nt_auth_token,
@@ -240,7 +239,7 @@ def _import_tags_per_project(
 
 def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
     """Assign tags to task"""
-    nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
+    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
     assigned = []
     for tag in task.get("labels"):
         if nt_tag_id := tags_mapping.get(tag.get("name") or "Unnamed"):
@@ -262,7 +261,7 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
 def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=None):
     """Import task-related comments"""
     tr_task_id = task.get("id")
-    nt_api_comments = apis.CommentsApi(nt_client)
+    nt_api_comments = api.CommentsApi(nt_client)
     comments = [{"text": task.get("desc")}] if task.get("desc") else []
     comments += sorted(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
@@ -284,7 +283,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 
 # def _import_members(nt_client, trello_client, team_id: str):
 #     """ Invite Trello members to Nozbe """
-#     nt_team_members = apis.TeamMembersApi(nt_client)
+#     nt_team_members = api.TeamMembersApi(nt_client)
 #     current_members_len = len(
 #         [
 #             elt.get("id")
@@ -310,7 +309,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 #             color="avatarColor1",
 #             is_placeholder=True,
 #         )
-#         if nt_user := apis.UsersApi(nt_client).post_user(user_model):
+#         if nt_user := api.UsersApi(nt_client).post_user(user_model):
 #             team_member_model = models.TeamMember(
 #                 id=id16(),
 #                 team_id=models.Id16(team_id),
@@ -318,6 +317,6 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 #                 role="member",
 #                 status="pending",
 #             )
-#             nt_member = apis.TeamMembersApi(nt_client).post_team_member(
+#             nt_member = api.TeamMembersApi(nt_client).post_team_member(
 #                 team_member_model
 #             )

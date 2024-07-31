@@ -22,8 +22,7 @@ from ntimporters.utils import (
     set_unassigned_tag,
     trim,
 )
-from openapi_client import models
-from openapi_client import api as apis
+from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 from todoist_api_python.api import TodoistAPI
 
@@ -71,7 +70,7 @@ def _import_data(
     nt_client: nt.ApiClient, todoist_client, todoist_sync_client, team_id: str, nt_auth_token: str
 ):
     """Import everything from todoist to Nozbe"""
-    nt_project_api = apis.ProjectsApi(nt_client)
+    nt_project_api = api.ProjectsApi(nt_client)
     single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
@@ -136,7 +135,7 @@ def _import_members(
 ):
     """Import members into Nozbe"""
     return  # TODO
-    # nt_team_members_api = apis.TeamMembersApi(nt_client)
+    # nt_team_members_api = api.TeamMembersApi(nt_client)
     # active_nt_members =sum([True for elt in nt_team_members_api.get_team_members()
     # if elt.get("status") == "active"])
     # uniq_emails = set()
@@ -151,7 +150,7 @@ def _import_members(
     # nt_client,
     # "team_members", active_nt_members + len(uniq_emails))
     # for email in uniq_emails:
-    #     if nt_user := apis.UsersApi(nt_client).post_user(user_model):
+    #     if nt_user := api.UsersApi(nt_client).post_user(user_model):
     #         user_id = nt_user.get("id")
     #         nt_team_members_api.post_team_member(team_member_model)
 
@@ -170,7 +169,7 @@ def _import_project_sections(
     imported=None,
 ):
     """Import todoist lists as project sections"""
-    nt_api_sections = apis.ProjectSectionsApi(nt_client)
+    nt_api_sections = api.ProjectSectionsApi(nt_client)
 
     # import project sections
     mapping = {}
@@ -219,8 +218,8 @@ def _import_tasks(
     is_sap: bool = False,
     imported=None,
 ):
-    nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
-    nt_api_tasks = apis.TasksApi(nt_client)
+    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
+    nt_api_tasks = api.TasksApi(nt_client)
     tags_mapping = _import_tags(nt_client, todoist_client, team_id, nt_auth_token)
 
     def _parse_timestamp(todoist_date):
@@ -325,7 +324,7 @@ def _import_tags_assignments(
 
 def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) -> dict:
     """Import todoist tags and return name -> NT tag id mapping"""
-    nt_api_tags = apis.TagsApi(nt_client)
+    nt_api_tags = api.TagsApi(nt_client)
     nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
     check_limits(
         nt_auth_token,
@@ -354,7 +353,7 @@ class Comment:
 
 def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imported=None):
     """Import task-related comments"""
-    nt_api_comments = apis.CommentsApi(nt_client)
+    nt_api_comments = api.CommentsApi(nt_client)
 
     comments = sorted(
         todoist_client.get_comments(task_id=task.get("id")),

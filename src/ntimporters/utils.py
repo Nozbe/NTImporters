@@ -12,9 +12,7 @@ from typing import Optional, Tuple
 
 import requests
 from dateutil.parser import isoparse
-from openapi_client import models
-from openapi_client import api as apis
-from openapi_client import Color
+from openapi_client import models, api, Color
 
 HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
@@ -71,7 +69,7 @@ def check_limits(api_key: str, nt_team_id: str, nt_client, limit_name: str, curr
 
 def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
     """Get project group id if any"""
-    st_groups = apis.ProjectGroupsApi(nt_client).get_project_groups(
+    st_groups = api.ProjectGroupsApi(nt_client).get_project_groups(
         limit=1, name=group_name, team_id=team_id
     )
     return str(st_groups[0].id) if st_groups and st_groups[0] else None
@@ -102,20 +100,20 @@ def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
     """Get already imported records"""
     already_imported = []
     if group_id := get_group_id(nt_client, team_id, group_name):
-        for pgroup in apis.GroupAssignmentsApi(nt_client).get_group_assignments(
+        for pgroup in api.GroupAssignmentsApi(nt_client).get_group_assignments(
             group_id=group_id, group_type="project"
         ):
-            project = apis.ProjectsApi(nt_client).get_project_by_id(str(pgroup.object_id))
+            project = api.ProjectsApi(nt_client).get_project_by_id(str(pgroup.object_id))
             already_imported.append(("project", project))
-            for section in apis.ProjectSectionsApi(nt_client).get_project_sections(
+            for section in api.ProjectSectionsApi(nt_client).get_project_sections(
                 project_id=str(project.id)
             ):
                 already_imported.append(("project_section", section))
-            for task in apis.TasksApi(nt_client).get_tasks(project_id=str(project.id)):
+            for task in api.TasksApi(nt_client).get_tasks(project_id=str(project.id)):
                 already_imported.append(("task", task))
-                for comment in apis.CommentsApi(nt_client).get_comments(task_id=str(task.id)):
+                for comment in api.CommentsApi(nt_client).get_comments(task_id=str(task.id)):
                     already_imported.append(("comment", comment))
-                for tag in apis.TagsApi(nt_client).get_tags(task_id=str(task.id)):
+                for tag in api.TagsApi(nt_client).get_tags(task_id=str(task.id)):
                     already_imported.append(("tag", tag))
     entities = {
         "comments": {
@@ -136,16 +134,16 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
     try:
         group_id = get_group_id(nt_client, team_id, group_name)
         if not group_id and (
-            group := apis.ProjectGroupsApi(nt_client).post_project_group(
+            group := api.ProjectGroupsApi(nt_client).post_project_group(
                 models.ProjectGroup(id=id16(), name=group_name, team_id=team_id, is_private=True)
             )
         ):
             group_id = group.id
         args = {"object_id": str(project_id), "group_id": str(group_id), "group_type": "project"}
-        if group_id and not apis.GroupAssignmentsApi(nt_client).get_group_assignments(
+        if group_id and not api.GroupAssignmentsApi(nt_client).get_group_assignments(
             limit=1, **args
         ):
-            apis.GroupAssignmentsApi(nt_client).post_group_assignment(
+            api.GroupAssignmentsApi(nt_client).post_group_assignment(
                 models.GroupAssignment(id=id16(), **args)
             )
     except Exception as exc:
@@ -155,14 +153,14 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
 def set_unassigned_tag(nt_client, task_id: str):
     """set 'missing responsibility' tag"""
     tag_name, tag_id = "missing responsibility", None
-    st_tags = apis.TagsApi(nt_client).get_tags(limit=1, name=tag_name)
+    st_tags = api.TagsApi(nt_client).get_tags(limit=1, name=tag_name)
 
     tag_id = st_tags[0].id if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
     if tag_id:
         args = {"tag_id": str(tag_id), "task_id": str(task_id)}
-        if not apis.TagAssignmentsApi(nt_client).get_tag_assignments(**args, limit=1):
+        if not api.TagAssignmentsApi(nt_client).get_tag_assignments(**args, limit=1):
             try:
-                apis.TagAssignmentsApi(nt_client).post_tag_assignment(
+                api.TagAssignmentsApi(nt_client).post_tag_assignment(
                     models.TagAssignment(id=id16(), **args)
                 )
             except Exception as exc:
@@ -171,7 +169,7 @@ def set_unassigned_tag(nt_client, task_id: str):
 
 def nt_limits(nt_client, team_id: str):
     """Check Nozbe limits"""
-    if (team := apis.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
+    if (team := api.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
         return json.loads(team.limits)
     return {}
 
@@ -185,7 +183,7 @@ def map_color(color: Optional[str]) -> Color:
 
 def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
     """Get team-related projects"""
-    nt_project_api = apis.ProjectsApi(nt_client)
+    nt_project_api = api.ProjectsApi(nt_client)
     return [
         dict(project)
         for project in nt_project_api.get_projects(
@@ -201,7 +199,7 @@ def get_projects_per_team(nt_client, team_id: str) -> Optional[str]:
 
 def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
     """Returns NT Single Tasks's project ID"""
-    st_projects = apis.ProjectsApi(nt_client).get_projects(
+    st_projects = api.ProjectsApi(nt_client).get_projects(
         limit=1, team_id=team_id, is_single_actions=True
     )
     return str(st_projects[0].id) if st_projects and st_projects[0] else None
@@ -216,10 +214,10 @@ def current_nt_member(nt_client) -> Optional[str]:
 def nt_members_by_email(nt_client) -> Tuple[dict, str]:
     """Map NT emails to member ids"""
     nt_members = {
-        str(elt.user_id): str(elt.id) for elt in apis.TeamMembersApi(nt_client).get_team_members()
+        str(elt.user_id): str(elt.id) for elt in api.TeamMembersApi(nt_client).get_team_members()
     }
     current_user_id, mapping = nt_client.configuration.username, {}
-    for user in apis.UsersApi(nt_client).get_users():
+    for user in api.UsersApi(nt_client).get_users():
         if hasattr(user, "email") and user.email:
             email = user.email
         elif hasattr(user, "invitation_email") and user.invitation_email:
@@ -248,7 +246,7 @@ def parse_timestamp(datetime: Optional[str]):
 def post_tag(nt_client, tag_name: str, color: str):
     """Post tag to Nozbe"""
     try:
-        nt_tag = apis.TagsApi(nt_client).post_tag(
+        nt_tag = api.TagsApi(nt_client).post_tag(
             models.Tag(
                 id=id16(),
                 name=trim(tag_name),
@@ -270,7 +268,7 @@ def match_nt_users(nt_client, emails: list) -> dict:
 
     nt_users = [
         (str(elt.email if hasattr(elt, "email") else elt.invitation_email), str(elt.id))
-        for elt in apis.UsersApi(nt_client).get_users()
+        for elt in api.UsersApi(nt_client).get_users()
         if any((hasattr(elt, "email"), hasattr(elt, "invitation_email")))
     ]
     pairs = []
@@ -285,7 +283,7 @@ def match_nt_users(nt_client, emails: list) -> dict:
     if pairs:
         nt_members = {
             str(elt.user_id): str(elt.id)
-            for elt in apis.TeamMembersApi(nt_client).get_team_members()
+            for elt in api.TeamMembersApi(nt_client).get_team_members()
         }
         return {elt[0]: nt_members.get(elt[1]) for elt in pairs if elt[1] in nt_members}
     return {}

@@ -19,8 +19,7 @@ from ntimporters.utils import (
     set_unassigned_tag,
     trim,
 )
-from openapi_client import models
-from openapi_client import api as apis
+from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 
 SPEC = {
@@ -61,7 +60,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
 
 def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_token: str):
     """Import everything from monday to Nozbe"""
-    projects_api = apis.ProjectsApi(nt_client)
+    projects_api = api.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
@@ -130,7 +129,7 @@ def _import_project_sections(
     imported=None,
 ):
     """Import monday lists as project sections"""
-    nt_api_sections = apis.ProjectSectionsApi(nt_client)
+    nt_api_sections = api.ProjectSectionsApi(nt_client)
     imported = imported or {}
 
     check_limits(
@@ -179,7 +178,7 @@ def _import_tasks(
     imported=None,
 ):
     """Import tasks"""
-    nt_api_tasks = apis.TasksApi(nt_client)
+    nt_api_tasks = api.TasksApi(nt_client)
     monday_users = monday_client.users()
     nt_members = match_nt_users(nt_client, monday_users.values())
     for task in monday_client.tasks(m_project_id):
@@ -221,7 +220,7 @@ def _import_tasks(
 
 def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None):
     """Import task-related comments"""
-    nt_api_comments = apis.CommentsApi(nt_client)
+    nt_api_comments = api.CommentsApi(nt_client)
     for comment in sorted(
         monday_client.comments(tr_task_id),
         key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
