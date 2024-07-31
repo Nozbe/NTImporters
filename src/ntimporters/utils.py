@@ -1,7 +1,6 @@
 """ Common helper functions """
 
 import string
-import random
 import functools
 import hashlib
 from os import getenv
