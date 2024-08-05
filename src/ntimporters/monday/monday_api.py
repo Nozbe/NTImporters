@@ -1,4 +1,5 @@
 """ Monday API client module """
+
 import json
 
 import requests
@@ -18,7 +19,8 @@ class MondayClient:
         if resp := requests.get(
             self.api_path, json={"query": f"{{ {query} }}"}, headers=self.headers
         ):
-            return resp.json()
+            if resp.status_code == 200:
+                return resp.json()
 
         return {}
 
@@ -61,14 +63,22 @@ class MondayClient:
 
     def tasks(self, project_id: str) -> list:
         """Get Monday items (NT tasks)"""
-        query = f"""boards(state:all limit:{self.limit} ids:{project_id})
-        {{ items(newest_first:false) {{ id group {{id}} name column_values {{ type value text title }} }}
-        }}"""
+        query = f"""
+        boards(state:all limit:{self.limit} order_by:created_at ids:{project_id}) {{
+            items_page {{
+                items {{ id name group {{id}} column_values {{text type value}} }}
+            }}
+        }}
+        """
         # ASSUMPTION: if only one date-type column then it is due_at
         tasks = []
         delta = 0
         for i, task in enumerate(
-            self._req(query).get("data", {}).get("boards", [{}])[0].get("items", [])
+            self._req(query)
+            .get("data", {})
+            .get("boards", [{}])[0]
+            .get("items_page")
+            .get("items", [])
         ):
             assigned = []
             for col in task.get("column_values"):
@@ -96,7 +106,7 @@ class MondayClient:
         """Get Monday subitems (NT tasks)"""
         query = f"""items(ids:{item_id} limit:1)
             {{ group {{id position}}
-                subitems{{ name column_values {{ value type text title }} }} }}
+                subitems{{ name column_values {{ value type text }} }} }}
         """
         # ASSUMPTION: if only one date-type column then it is due_at
         tasks = []

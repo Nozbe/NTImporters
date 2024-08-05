@@ -1,4 +1,5 @@
 """Todoist -> Nozbe importer"""
+
 import functools
 from dataclasses import dataclass
 from typing import Optional
@@ -19,10 +20,9 @@ from ntimporters.utils import (
     nt_open_projects_len,
     post_tag,
     set_unassigned_tag,
-    strip_readonly,
     trim,
 )
-from openapi_client import apis, models
+from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 from todoist_api_python.api import TodoistAPI
 
@@ -52,6 +52,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                 configuration=nt.Configuration(
                     host=API_HOST,
                     api_key={"ApiKeyAuth": nt_auth_token},
+                    username=nt_auth_token.split("_")[0],
                 )
             ),
             RLProxy(TodoistAPI(auth_token)),
@@ -69,7 +70,7 @@ def _import_data(
     nt_client: nt.ApiClient, todoist_client, todoist_sync_client, team_id: str, nt_auth_token: str
 ):
     """Import everything from todoist to Nozbe"""
-    nt_project_api = apis.ProjectsApi(nt_client)
+    nt_project_api = api.ProjectsApi(nt_client)
     single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
@@ -77,12 +78,12 @@ def _import_data(
         """Import todoist project"""
         if project.name != "Inbox":
             project_model = models.Project(
-                name=models.NameAllowEmpty(name := trim(project.name)),
+                name=(name := trim(project.name)),
                 is_template=False,
-                team_id=models.Id16(team_id),
-                author_id=models.Id16ReadOnly(id16()),
-                created_at=models.TimestampReadOnly(1),
-                last_event_at=models.TimestampReadOnly(1),
+                team_id=team_id,
+                author_id=id16(),
+                created_at=1,
+                last_event_at=1,
                 is_favorite=project.is_favorite,
                 sidebar_position=1.0,
                 is_open=True,
@@ -91,13 +92,13 @@ def _import_data(
             try:
                 nt_project = (
                     exists("projects", name, imported)
-                    or nt_project_api.post_project(strip_readonly(project_model))
+                    or nt_project_api.post_project(project_model)
                     or {}
                 )
             except Exception:
                 return
 
-            if not (nt_project_id := nt_project and str(nt_project.get("id"))):
+            if not (nt_project_id := nt_project and str(nt_project.id)):
                 return
             add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Todoist")
         else:
@@ -134,7 +135,7 @@ def _import_members(
 ):
     """Import members into Nozbe"""
     return  # TODO
-    # nt_team_members_api = apis.TeamMembersApi(nt_client)
+    # nt_team_members_api = api.TeamMembersApi(nt_client)
     # active_nt_members =sum([True for elt in nt_team_members_api.get_team_members()
     # if elt.get("status") == "active"])
     # uniq_emails = set()
@@ -149,7 +150,7 @@ def _import_members(
     # nt_client,
     # "team_members", active_nt_members + len(uniq_emails))
     # for email in uniq_emails:
-    #     if nt_user := apis.UsersApi(nt_client).post_user(user_model):
+    #     if nt_user := api.UsersApi(nt_client).post_user(user_model):
     #         user_id = nt_user.get("id")
     #         nt_team_members_api.post_team_member(team_member_model)
 
@@ -168,7 +169,7 @@ def _import_project_sections(
     imported=None,
 ):
     """Import todoist lists as project sections"""
-    nt_api_sections = apis.ProjectSectionsApi(nt_client)
+    nt_api_sections = api.ProjectSectionsApi(nt_client)
 
     # import project sections
     mapping = {}
@@ -178,17 +179,15 @@ def _import_project_sections(
                 if nt_section := exists(
                     "project_sections", name := trim(section.name), imported
                 ) or nt_api_sections.post_project_section(
-                    strip_readonly(
-                        models.ProjectSection(
-                            models.Id16ReadOnly(id16()),
-                            models.Id16(nt_project_id),
-                            models.Name(name),
-                            models.TimestampReadOnly(1),
-                            position=float(section.order),
-                        )
+                    models.ProjectSection(
+                        id=id16(),
+                        project_id=nt_project_id,
+                        name=name,
+                        created_at=1,
+                        position=float(section.order),
                     )
                 ):
-                    mapping[section.id] = str(nt_section.get("id"))
+                    mapping[section.id] = str(nt_section.id)
             except OpenApiException:
                 pass
     _import_tasks(
@@ -219,26 +218,24 @@ def _import_tasks(
     is_sap: bool = False,
     imported=None,
 ):
-    nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
-    nt_api_tasks = apis.TasksApi(nt_client)
+    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
+    nt_api_tasks = api.TasksApi(nt_client)
     tags_mapping = _import_tags(nt_client, todoist_client, team_id, nt_auth_token)
 
-    def _parse_timestamp(todoist_date) -> Optional[models.TimestampNullable]:
+    def _parse_timestamp(todoist_date):
         """Parses todoist timestamp into NT timestamp format"""
         if isinstance(todoist_date, str):
             return (
-                models.TimestampNullable(int(isoparse(todoist_date).timestamp() * 1000)),
+                int(isoparse(todoist_date).timestamp() * 1000),
                 len(todoist_date) == 10,
             )
 
         if not todoist_date or not any((todoist_date.get("date"), todoist_date.get("datetime"))):
             return None, False
         return (
-            models.TimestampNullable(
-                int(
-                    isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp()
-                    * 1000
-                )
+            int(
+                isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp()
+                * 1000
             ),
             todoist_date.get("datetime", None) is None,
         )
@@ -267,25 +264,21 @@ def _import_tasks(
         if nt_task := exists(
             "tasks", name := trim(task.get("content", "")), imported
         ) or nt_api_tasks.post_task(
-            strip_readonly(
-                models.Task(
-                    is_followed=False,
-                    is_abandoned=False,
-                    name=models.Name(name),
-                    project_id=models.ProjectId(nt_project_id),
-                    author_id=models.Id16ReadOnly(id16()),
-                    missed_repeats=0,
-                    created_at=models.TimestampReadOnly(1),
-                    last_activity_at=models.TimestampReadOnly(1),
-                    project_section_id=models.Id16Nullable(
-                        sections_mapping.get(task.get("section_id"))
-                    ),
-                    project_position=float(task.get("order") or 1),
-                    due_at=due_at,
-                    is_all_day=is_all_day,
-                    responsible_id=responsible_id,
-                    ended_at=_parse_timestamp(task.get("completed_date"))[0],
-                )
+            models.Task(
+                is_followed=False,
+                is_abandoned=False,
+                name=name,
+                project_id=nt_project_id,
+                author_id=id16(),
+                missed_repeats=0,
+                created_at=1,
+                last_activity_at=1,
+                project_section_id=sections_mapping.get(task.get("section_id")),
+                project_position=float(task.get("order") or 1),
+                due_at=due_at,
+                is_all_day=is_all_day,
+                responsible_id=responsible_id,
+                ended_at=_parse_timestamp(task.get("completed_date"))[0],
             )
         ):
             if not is_sap and should_set_tag:
@@ -319,12 +312,10 @@ def _import_tags_assignments(
         if nt_tag_id := tags_mapping.get(str(tag_id)):
             try:
                 nt_api_tag_assignments.post_tag_assignment(
-                    strip_readonly(
-                        models.TagAssignment(
-                            id=models.Id16ReadOnly(id16()),
-                            tag_id=models.Id16(nt_tag_id),
-                            task_id=models.Id16(nt_task_id),
-                        )
+                    models.TagAssignment(
+                        id=id16(),
+                        tag_id=nt_tag_id,
+                        task_id=nt_task_id,
                     )
                 )
             except Exception:
@@ -333,10 +324,8 @@ def _import_tags_assignments(
 
 def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) -> dict:
     """Import todoist tags and return name -> NT tag id mapping"""
-    nt_api_tags = apis.TagsApi(nt_client)
-    nt_tags = {
-        str(elt.get("name")): str(elt.get("id")) for elt in nt_api_tags.get_tags(fields="id,name")
-    }
+    nt_api_tags = api.TagsApi(nt_client)
+    nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
     check_limits(
         nt_auth_token,
         team_id,
@@ -364,7 +353,7 @@ class Comment:
 
 def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imported=None):
     """Import task-related comments"""
-    nt_api_comments = apis.CommentsApi(nt_client)
+    nt_api_comments = api.CommentsApi(nt_client)
 
     comments = sorted(
         todoist_client.get_comments(task_id=task.get("id")),
@@ -375,16 +364,14 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imp
     for comment in comments:
         if not exists("comments", body := str(comment.content or "…"), imported):
             nt_api_comments.post_comment(
-                strip_readonly(
-                    models.Comment(
-                        is_team=False,
-                        is_pinned=False,
-                        body=body,
-                        task_id=models.Id16(nt_task_id),
-                        author_id=models.Id16ReadOnly(id16()),
-                        created_at=models.TimestampReadOnly(1),
-                        # FIXME impossible to set ReadOnly for current API impl
-                        extra="",
-                    )
+                models.Comment(
+                    is_team=False,
+                    is_pinned=False,
+                    body=body,
+                    task_id=nt_task_id,
+                    author_id=id16(),
+                    created_at=1,
+                    # FIXME impossible to set ReadOnly for current API impl
+                    extra="",
                 )
             )

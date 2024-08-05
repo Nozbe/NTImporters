@@ -1,4 +1,5 @@
 """Monday -> Nozbe importer"""
+
 import re
 from typing import Optional
 
@@ -16,10 +17,9 @@ from ntimporters.utils import (
     match_nt_users,
     nt_open_projects_len,
     set_unassigned_tag,
-    strip_readonly,
     trim,
 )
-from openapi_client import apis, models
+from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 
 SPEC = {
@@ -45,6 +45,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
                 configuration=nt.Configuration(
                     host=API_HOST,
                     api_key={"ApiKeyAuth": nt_auth_token},
+                    username=nt_auth_token.split("_")[0],
                 )
             ),
             MondayClient(app_key),
@@ -59,7 +60,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
 
 def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_token: str):
     """Import everything from monday to Nozbe"""
-    projects_api = apis.ProjectsApi(nt_client)
+    projects_api = api.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
@@ -68,26 +69,22 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
         if project.get("name", "").startswith("Subitems of"):
             return
         project_model = models.Project(
-            name=models.NameAllowEmpty(name := trim(project.get("name", ""))),
-            team_id=models.Id16(team_id),
-            author_id=models.Id16ReadOnly(id16()),
-            created_at=models.TimestampReadOnly(1),
-            last_event_at=models.TimestampReadOnly(1),
+            name=(name := trim(project.get("name", ""))),
+            team_id=team_id,
+            author_id=id16(),
+            created_at=1,
+            last_event_at=1,
             is_template=False,
-            ended_at=models.TimestampNullable(1)
-            if project.get("state") in ("archived", "deleted")
-            else None,
+            ended_at=1 if project.get("state") in ("archived", "deleted") else None,
             sidebar_position=1.0,
             description=project.get("description"),
             is_open=project.get("board_kind") == "public",
             extra="",
         )
         nt_project = (
-            exists("projects", name, imported)
-            or projects_api.post_project(strip_readonly(project_model))
-            or {}
+            exists("projects", name, imported) or projects_api.post_project(project_model) or {}
         )
-        if not (nt_project_id := nt_project and str(nt_project.get("id"))):
+        if not (nt_project_id := nt_project and str(nt_project.id)):
             return
         add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
@@ -132,7 +129,7 @@ def _import_project_sections(
     imported=None,
 ):
     """Import monday lists as project sections"""
-    nt_api_sections = apis.ProjectSectionsApi(nt_client)
+    nt_api_sections = api.ProjectSectionsApi(nt_client)
     imported = imported or {}
 
     check_limits(
@@ -148,20 +145,16 @@ def _import_project_sections(
             if nt_section := exists(
                 "project_sections", name := trim(section.get("title", "")), imported
             ) or nt_api_sections.post_project_section(
-                strip_readonly(
-                    models.ProjectSection(
-                        models.Id16ReadOnly(id16()),
-                        models.Id16(nt_project_id),
-                        models.Name(name),
-                        models.TimestampReadOnly(1),
-                        archived_at=models.TimestampReadOnly(1)
-                        if section.get("archived")
-                        else None,
-                        position=float(section.get("position") or 1.0),
-                    )
+                models.ProjectSection(
+                    id=id16(),
+                    project_id=nt_project_id,
+                    name=name,
+                    created_at=1,
+                    archived_at=1 if section.get("archived") else None,
+                    position=float(section.get("position") or 1.0),
                 )
             ):
-                sections_mapping[section.get("id")] = str(nt_section.get("id"))
+                sections_mapping[section.get("id")] = str(nt_section.id)
         except OpenApiException:
             pass
     _import_tasks(
@@ -185,7 +178,7 @@ def _import_tasks(
     imported=None,
 ):
     """Import tasks"""
-    nt_api_tasks = apis.TasksApi(nt_client)
+    nt_api_tasks = api.TasksApi(nt_client)
     monday_users = monday_client.users()
     nt_members = match_nt_users(nt_client, monday_users.values())
     for task in monday_client.tasks(m_project_id):
@@ -199,22 +192,20 @@ def _import_tasks(
         if nt_task := exists(
             "tasks", name := trim(task.get("name", "")), imported
         ) or nt_api_tasks.post_task(
-            strip_readonly(
-                models.Task(
-                    is_followed=False,
-                    is_abandoned=False,
-                    missed_repeats=0,
-                    name=models.Name(name),
-                    project_id=models.ProjectId(nt_project_id),
-                    author_id=models.Id16ReadOnly(id16()),
-                    created_at=models.TimestampReadOnly(1),
-                    last_activity_at=models.TimestampReadOnly(1),
-                    project_section_id=models.Id16Nullable(sections_mapping.get(task.get("group"))),
-                    project_position=float(task.get("position") or 1.0),
-                    due_at=task.get("due_at"),
-                    is_all_day=task.get("is_all_day"),
-                    responsible_id=responsible_id if task.get("due_at") else None,
-                )
+            models.Task(
+                is_followed=False,
+                is_abandoned=False,
+                missed_repeats=0,
+                name=name,
+                project_id=nt_project_id,
+                author_id=id16(),
+                created_at=1,
+                last_activity_at=1,
+                project_section_id=sections_mapping.get(task.get("group")),
+                project_position=float(task.get("position") or 1.0),
+                due_at=task.get("due_at"),
+                is_all_day=task.get("is_all_day"),
+                responsible_id=responsible_id if task.get("due_at") else None,
             )
         ):
             if task.get("due_at") and not responsible_id:
@@ -229,23 +220,21 @@ def _import_tasks(
 
 def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None):
     """Import task-related comments"""
-    nt_api_comments = apis.CommentsApi(nt_client)
+    nt_api_comments = api.CommentsApi(nt_client)
     for comment in sorted(
         monday_client.comments(tr_task_id),
         key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
     ):
         if not exists("comments", body := format_body(comment.get("text_body") or "…"), imported):
             nt_api_comments.post_comment(
-                strip_readonly(
-                    models.Comment(
-                        is_pinned=False,
-                        is_team=False,
-                        body=body,
-                        task_id=models.Id16(nt_task_id),
-                        created_at=models.TimestampReadOnly(1),
-                        author_id=models.Id16ReadOnly(id16()),
-                        extra="",
-                    )
+                models.Comment(
+                    is_pinned=False,
+                    is_team=False,
+                    body=body,
+                    task_id=nt_task_id,
+                    created_at=1,
+                    author_id=id16(),
+                    extra="",
                 )
             )
 

@@ -1,4 +1,5 @@
 """Trello -> Nozbe importer"""
+
 from typing import Optional
 
 import openapi_client as nt
@@ -18,10 +19,9 @@ from ntimporters.utils import (
     parse_timestamp,
     post_tag,
     set_unassigned_tag,
-    strip_readonly,
     trim,
 )
-from openapi_client import apis, models
+from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 
 SPEC = {
@@ -51,6 +51,7 @@ def run_import(
                 configuration=nt.Configuration(
                     host=API_HOST,
                     api_key={"ApiKeyAuth": nt_auth_token},
+                    username=nt_auth_token.split("_")[0],
                 )
             ),
             TrelloClient(app_key, auth_token),
@@ -58,25 +59,26 @@ def run_import(
             nt_auth_token,
         )
     except Exception as exc:
+        print(exc)
         return exc
     return None
 
 
 def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_token: str):
     """Import everything from Trello to Nozbe"""
-    projects_api = apis.ProjectsApi(nt_client)
+    projects_api = api.ProjectsApi(nt_client)
     curr_member = current_nt_member(nt_client)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
     def _import_project(project: dict, curr_member: str):
         """Import trello project"""
         project_model = models.Project(
-            name=models.NameAllowEmpty(name := trim(project.get("name", ""))),
+            name=(name := trim(project.get("name", ""))),
             is_template=False,
-            team_id=models.Id16(team_id),
-            author_id=models.Id16ReadOnly(id16()),
-            created_at=models.TimestampReadOnly(1),
-            last_event_at=models.TimestampReadOnly(1),
+            team_id=team_id,
+            author_id=id16(),
+            created_at=1,
+            last_event_at=1,
             color=map_color(project.get("backgroundTopColor")),
             description=str(project.get("desc") or ""),
             is_favorite=project.get("is_fav"),
@@ -85,12 +87,9 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
             extra="",
         )
         nt_project = (
-            exists("projects", name, imported)
-            or projects_api.post_project(strip_readonly(project_model))
-            or {}
+            exists("projects", name, imported) or projects_api.post_project(project_model) or {}
         )
-
-        if not (nt_project_id := nt_project and str(nt_project.get("id"))):
+        if not (nt_project_id := nt_project and str(nt_project.id)):
             return
         add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
@@ -132,8 +131,8 @@ def _import_project_sections(
     imported=None,
 ):
     """Import trello lists as project sections"""
-    nt_api_sections = apis.ProjectSectionsApi(nt_client)
-    nt_api_tasks = apis.TasksApi(nt_client)
+    nt_api_sections = api.ProjectSectionsApi(nt_client)
+    nt_api_tasks = api.TasksApi(nt_client)
 
     # import project sections
     check_limits(
@@ -148,20 +147,18 @@ def _import_project_sections(
         try:
             nt_section = exists("project_sections", name := trim(section.get("name", "")), imported)
             if nt_section := nt_section or nt_api_sections.post_project_section(
-                strip_readonly(
-                    models.ProjectSection(
-                        models.Id16ReadOnly(id16()),
-                        models.Id16(nt_project_id),
-                        models.Name(name),
-                        models.TimestampReadOnly(1),
-                        archived_at=models.TimestampNullable(1) if section.get("closed") else None,
-                        position=float(j),
-                    )
+                models.ProjectSection(
+                    id=id16(),
+                    project_id=nt_project_id,
+                    name=name,
+                    created_at=1,
+                    archived_at=1 if section.get("closed") else None,
+                    position=float(j),
                 )
             ):
                 nt_section_id = nt_section.id
-        except OpenApiException:
-            pass
+        except OpenApiException as exc:
+            print(exc)
 
         trello_members = trello_client.members_emails() or {}
         nt_users = match_nt_users(nt_client, trello_members.values())
@@ -182,26 +179,24 @@ def _import_project_sections(
 
             nt_task = exists("tasks", name := trim(task.get("name", "")), imported)
             if nt_task := nt_task or nt_api_tasks.post_task(
-                strip_readonly(
-                    models.Task(
-                        name=models.Name(name),
-                        project_id=models.ProjectId(nt_project_id),
-                        author_id=models.Id16ReadOnly(id16()),
-                        created_at=models.TimestampReadOnly(1),
-                        last_activity_at=models.TimestampReadOnly(1),
-                        project_section_id=models.Id16Nullable(str(nt_section_id)),
-                        project_position=float(i),
-                        due_at=parse_timestamp(task.get("due")),
-                        responsible_id=responsible_id,
-                        is_all_day=False,  # trello due at has to be specified with time
-                        is_followed=False,
-                        is_abandoned=False,
-                        missed_repeats=0,
-                        ended_at=None
-                        if not task.get("dueComplete")
-                        else parse_timestamp(task.get("due")),
-                        # there is no ended_at time @ trello
-                    )
+                models.Task(
+                    name=name,
+                    project_id=nt_project_id,
+                    author_id=id16(),
+                    created_at=1,
+                    last_activity_at=1,
+                    project_section_id=str(nt_section_id),
+                    project_position=float(i),
+                    due_at=parse_timestamp(task.get("due")),
+                    responsible_id=responsible_id,
+                    is_all_day=False,  # trello due at has to be specified with time
+                    is_followed=False,
+                    is_abandoned=False,
+                    missed_repeats=0,
+                    ended_at=(
+                        None if not task.get("dueComplete") else parse_timestamp(task.get("due"))
+                    ),
+                    # there is no ended_at time @ trello
                 )
             ):
                 if task.get("due") and not responsible_id:
@@ -225,10 +220,8 @@ def _import_tags_per_project(
     nt_client, trello_client, project: dict, team_id: str, nt_auth_token: str
 ) -> dict:
     """Import trello tags and return name -> NT tag id mapping"""
-    nt_api_tags = apis.TagsApi(nt_client)
-    nt_tags = {
-        str(elt.get("name")): str(elt.get("id")) for elt in nt_api_tags.get_tags(fields="id,name")
-    }
+    nt_api_tags = api.TagsApi(nt_client)
+    nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
     check_limits(
         nt_auth_token,
         team_id,
@@ -246,7 +239,7 @@ def _import_tags_per_project(
 
 def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
     """Assign tags to task"""
-    nt_api_tag_assignments = apis.TagAssignmentsApi(nt_client)
+    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
     assigned = []
     for tag in task.get("labels"):
         if nt_tag_id := tags_mapping.get(tag.get("name") or "Unnamed"):
@@ -254,23 +247,21 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
                 continue
             try:
                 nt_api_tag_assignments.post_tag_assignment(
-                    strip_readonly(
-                        models.TagAssignment(
-                            id=models.Id16ReadOnly(id16()),
-                            tag_id=models.Id16(nt_tag_id),
-                            task_id=models.Id16(nt_task_id),
-                        )
+                    models.TagAssignment(
+                        id=id16(),
+                        tag_id=nt_tag_id,
+                        task_id=nt_task_id,
                     )
                 )
                 assigned.append(nt_tag_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                print(exc)
 
 
 def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=None):
     """Import task-related comments"""
     tr_task_id = task.get("id")
-    nt_api_comments = apis.CommentsApi(nt_client)
+    nt_api_comments = api.CommentsApi(nt_client)
     comments = [{"text": task.get("desc")}] if task.get("desc") else []
     comments += sorted(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
@@ -278,23 +269,21 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
     for comment in comments:
         if not exists("comments", body := comment.get("text") or "…", imported):
             nt_api_comments.post_comment(
-                strip_readonly(
-                    models.Comment(
-                        body=body,
-                        task_id=models.Id16(nt_task_id),
-                        author_id=models.Id16ReadOnly(id16()),
-                        created_at=models.TimestampReadOnly(1),
-                        is_team=False,
-                        is_pinned=False,
-                        extra="",
-                    )
+                models.Comment(
+                    body=body,
+                    task_id=nt_task_id,
+                    author_id=id16(),
+                    created_at=1,
+                    is_team=False,
+                    is_pinned=False,
+                    extra="",
                 )
             )
 
 
 # def _import_members(nt_client, trello_client, team_id: str):
 #     """ Invite Trello members to Nozbe """
-#     nt_team_members = apis.TeamMembersApi(nt_client)
+#     nt_team_members = api.TeamMembersApi(nt_client)
 #     current_members_len = len(
 #         [
 #             elt.get("id")
@@ -314,20 +303,20 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
 #     for email in emails_to_invite:
 #         print("inviting", email)
 #         user_model = models.User(
-#             id=models.Id16ReadOnly(id16()),
+#             id=id16(),
 #             invitation_email=email,
 #             name=models.Name(email),
 #             color="avatarColor1",
 #             is_placeholder=True,
 #         )
-#         if nt_user := apis.UsersApi(nt_client).post_user(strip_readonly(user_model)):
+#         if nt_user := api.UsersApi(nt_client).post_user(user_model):
 #             team_member_model = models.TeamMember(
-#                 id=models.Id16ReadOnly(id16()),
+#                 id=id16(),
 #                 team_id=models.Id16(team_id),
 #                 user_id=models.Id16(str(nt_user.id)),
 #                 role="member",
 #                 status="pending",
 #             )
-#             nt_member = apis.TeamMembersApi(nt_client).post_team_member(
-#                 strip_readonly(team_member_model)
+#             nt_member = api.TeamMembersApi(nt_client).post_team_member(
+#                 team_member_model
 #             )

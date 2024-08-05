@@ -578,6 +578,8 @@ class TagAssignmentsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        task_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Task ID")] = None,
+        tag_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Tag ID")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -602,6 +604,10 @@ class TagAssignmentsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param task_id: Task ID
+        :type task_id: str
+        :param tag_id: Tag ID
+        :type tag_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -629,6 +635,8 @@ class TagAssignmentsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            task_id=task_id,
+            tag_id=tag_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -657,6 +665,8 @@ class TagAssignmentsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        task_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Task ID")] = None,
+        tag_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Tag ID")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -681,6 +691,10 @@ class TagAssignmentsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param task_id: Task ID
+        :type task_id: str
+        :param tag_id: Tag ID
+        :type tag_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -708,6 +722,8 @@ class TagAssignmentsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            task_id=task_id,
+            tag_id=tag_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -736,6 +752,8 @@ class TagAssignmentsApi:
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Number of objects to skip")] = None,
         sort_by: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of params for sorting results, separated with commas. Put '-' at the beginning of param for descending order. Example 'created_at,-name,-ended_at'")] = None,
         fields: Annotated[Optional[Annotated[str, Field(strict=True)]], Field(description="List of fields that should be returned for each object, separated with commas")] = None,
+        task_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Task ID")] = None,
+        tag_id: Annotated[Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]], Field(description="Tag ID")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -760,6 +778,10 @@ class TagAssignmentsApi:
         :type sort_by: str
         :param fields: List of fields that should be returned for each object, separated with commas
         :type fields: str
+        :param task_id: Task ID
+        :type task_id: str
+        :param tag_id: Tag ID
+        :type tag_id: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -787,6 +809,8 @@ class TagAssignmentsApi:
             offset=offset,
             sort_by=sort_by,
             fields=fields,
+            task_id=task_id,
+            tag_id=tag_id,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -810,6 +834,8 @@ class TagAssignmentsApi:
         offset,
         sort_by,
         fields,
+        task_id,
+        tag_id,
         _request_auth,
         _content_type,
         _headers,
@@ -845,6 +871,14 @@ class TagAssignmentsApi:
         if fields is not None:
             
             _query_params.append(('fields', fields))
+            
+        if task_id is not None:
+            
+            _query_params.append(('task_id', task_id))
+            
+        if tag_id is not None:
+            
+            _query_params.append(('tag_id', tag_id))
             
         # process the header parameters
         # process the form parameters
