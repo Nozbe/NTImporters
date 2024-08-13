@@ -311,7 +311,6 @@ def _import_tasks(
                     created_at=1,
                 )
             )
-            raise Exception()
 
         if (task_description := task_full.get("notes", "")) and not exists(
             "comments", task_description, imported

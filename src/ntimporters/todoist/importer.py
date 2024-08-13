@@ -12,6 +12,7 @@ from ntimporters.utils import (
     check_limits,
     API_HOST,
     get_imported_entities,
+    current_nt_member,
     exists,
     get_single_tasks_project_id,
     id16,
