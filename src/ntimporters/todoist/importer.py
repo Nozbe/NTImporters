@@ -73,6 +73,7 @@ def _import_data(
     nt_project_api = api.ProjectsApi(nt_client)
     single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
+    author_id = current_nt_member(nt_client, team_id)
 
     def _import_project(project: dict):
         """Import todoist project"""
@@ -81,7 +82,7 @@ def _import_data(
                 name=(name := trim(project.name)),
                 is_template=False,
                 team_id=team_id,
-                author_id=id16(),
+                author_id=author_id,
                 created_at=1,
                 last_event_at=1,
                 is_favorite=project.is_favorite,
@@ -110,7 +111,7 @@ def _import_data(
             todoist_sync_client,
             nt_project_id,
             project,
-            nt_members_by_email(nt_client),
+            nt_members_by_email(nt_client, team_id),
             team_id,
             nt_auth_token,
             is_sap=nt_project_id == single_tasks_id,
@@ -221,6 +222,7 @@ def _import_tasks(
     nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
     nt_api_tasks = api.TasksApi(nt_client)
     tags_mapping = _import_tags(nt_client, todoist_client, team_id, nt_auth_token)
+    author_id = nt_members[1]
 
     def _parse_timestamp(todoist_date):
         """Parses todoist timestamp into NT timestamp format"""
@@ -247,11 +249,11 @@ def _import_tasks(
             t_members = todoist_members(todoist_client, task.get("project_id"))
             user_matches = match_nt_users(nt_client, t_members.values())
             responsible_id = user_matches.get(t_members.get(task.get("assignee_id")))
-        if is_sap and responsible_id and responsible_id != nt_members[1]:
-            responsible_id = nt_members[1]
+        if is_sap and responsible_id and responsible_id != author_id:
+            responsible_id = author_id
         if not responsible_id and task.get("due"):
             should_set_tag = True
-            responsible_id = nt_members[1]
+            responsible_id = author_id
 
         return should_set_tag, responsible_id
 
@@ -265,13 +267,15 @@ def _import_tasks(
             "tasks", name := trim(task.get("content", "")), imported
         ) or nt_api_tasks.post_task(
             models.Task(
+                id=id16(),
                 is_followed=False,
                 is_abandoned=False,
                 name=name,
                 project_id=nt_project_id,
-                author_id=id16(),
+                author_id=author_id,
                 missed_repeats=0,
                 created_at=1,
+                extra="",
                 last_activity_at=1,
                 project_section_id=sections_mapping.get(task.get("section_id")),
                 project_position=float(task.get("order") or 1),
@@ -285,7 +289,12 @@ def _import_tasks(
                 set_unassigned_tag(nt_client, nt_task.id)
             try:
                 _import_comments(
-                    nt_client, todoist_client, str(nt_task.id), task, imported=imported
+                    nt_client,
+                    todoist_client,
+                    str(nt_task.id),
+                    task,
+                    imported=imported,
+                    author_id=author_id,
                 )
                 _import_tags_assignments(
                     nt_api_tag_assignments,
@@ -351,7 +360,9 @@ class Comment:
     content: str
 
 
-def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imported=None):
+def _import_comments(
+    nt_client, todoist_client, nt_task_id: str, task: dict, imported=None, author_id=None
+):
     """Import task-related comments"""
     nt_api_comments = api.CommentsApi(nt_client)
 
@@ -369,9 +380,8 @@ def _import_comments(nt_client, todoist_client, nt_task_id: str, task: dict, imp
                     is_pinned=False,
                     body=body,
                     task_id=nt_task_id,
-                    author_id=id16(),
+                    author_id=author_id or id16(),
                     created_at=1,
-                    # FIXME impossible to set ReadOnly for current API impl
                     extra="",
                 )
             )

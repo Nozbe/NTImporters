@@ -67,7 +67,7 @@ def run_import(
 def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_token: str):
     """Import everything from Trello to Nozbe"""
     projects_api = api.ProjectsApi(nt_client)
-    curr_member = current_nt_member(nt_client)
+    curr_member = current_nt_member(nt_client, team_id)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
     def _import_project(project: dict, curr_member: str):
@@ -76,7 +76,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
             name=(name := trim(project.get("name", ""))),
             is_template=False,
             team_id=team_id,
-            author_id=id16(),
+            author_id=curr_member,
             created_at=1,
             last_event_at=1,
             color=map_color(project.get("backgroundTopColor")),
@@ -182,13 +182,14 @@ def _import_project_sections(
                 models.Task(
                     name=name,
                     project_id=nt_project_id,
-                    author_id=id16(),
+                    author_id=nt_member_id,
                     created_at=1,
                     last_activity_at=1,
                     project_section_id=str(nt_section_id),
                     project_position=float(i),
                     due_at=parse_timestamp(task.get("due")),
                     responsible_id=responsible_id,
+                    extra="",
                     is_all_day=False,  # trello due at has to be specified with time
                     is_followed=False,
                     is_abandoned=False,
@@ -209,7 +210,14 @@ def _import_project_sections(
                         nt_client, trello_client, project, team_id, nt_auth_token
                     ),
                 )
-                _import_comments(nt_client, trello_client, str(nt_task.id), task, imported=imported)
+                _import_comments(
+                    nt_client,
+                    trello_client,
+                    str(nt_task.id),
+                    task,
+                    imported=imported,
+                    author_id=nt_member_id,
+                )
                 # TODO import attachments, reminders?
 
 
@@ -258,7 +266,9 @@ def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
                 print(exc)
 
 
-def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=None):
+def _import_comments(
+    nt_client, trello_client, nt_task_id: str, task, imported=None, author_id=None
+):
     """Import task-related comments"""
     tr_task_id = task.get("id")
     nt_api_comments = api.CommentsApi(nt_client)
@@ -272,7 +282,7 @@ def _import_comments(nt_client, trello_client, nt_task_id: str, task, imported=N
                 models.Comment(
                     body=body,
                     task_id=nt_task_id,
-                    author_id=id16(),
+                    author_id=author_id or id16(),
                     created_at=1,
                     is_team=False,
                     is_pinned=False,
