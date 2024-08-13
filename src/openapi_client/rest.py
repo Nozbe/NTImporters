@@ -136,6 +136,8 @@ class RESTClientObject:
 
         post_params = post_params or {}
         headers = headers or {}
+        headers["Api-Version"] = "current"
+
         if devtoken := getenv("DEV_ACCESS_TOKEN"):
             headers["X-DevToken"] = devtoken
 
