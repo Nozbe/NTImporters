@@ -17,7 +17,8 @@ HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = f"https://{HOST}.nozbe.com/v1/api"
-# API_HOST = "http://localhost:8888/v1/api"
+if custom_host := getenv("CUSTOM_API_HOST"):
+    API_HOST = custom_host
 
 
 def id16():
