@@ -14,7 +14,6 @@ from ntimporters.utils import (
     get_single_tasks_project_id,
     id16,
     match_nt_users,
-    nt_members_by_email,
     nt_open_projects_len,
     parse_timestamp,
     post_tag,
@@ -97,7 +96,7 @@ def _import_data(
     """Import everything from Asana to Nozbe"""
     nt_api_projects = api.ProjectsApi(nt_client)
     nt_api_sections = api.ProjectSectionsApi(nt_client)
-    nt_member_id = current_nt_member(nt_client)
+    nt_member_id = current_nt_member(nt_client, team_id)
 
     check_limits(
         nt_auth_token,
@@ -128,9 +127,10 @@ def _import_data(
                 "projects", project_name := trim(project_full.get("name", "")), imported
             ) or nt_api_projects.post_project(
                 models.Project(
+                    id=id16(),
                     name=project_name,
                     team_id=team_id,
-                    author_id=id16(),
+                    author_id=nt_member_id,
                     created_at=1,
                     last_event_at=1,
                     ended_at=1 if project_full.get("archived") else None,
@@ -138,6 +138,7 @@ def _import_data(
                     is_open=True,  # TODO set is_open based on 'public' and 'members' properties
                     is_template=False,
                     sidebar_position=1.0,
+                    extra="",
                 )
             )
             if not nt_project:
@@ -182,7 +183,7 @@ def _import_data(
                 nt_project_id,
                 map_section_id,
                 map_tag_id,
-                nt_member_id,
+                nt_member_id=nt_member_id,
                 imported=imported,
             )
 
@@ -197,7 +198,7 @@ def _import_data(
             get_single_tasks_project_id(nt_client, team_id),
             {},
             map_tag_id,
-            nt_member_id,
+            nt_member_id=nt_member_id,
             is_sap=True,
             imported=imported,
         )
@@ -225,13 +226,12 @@ def _import_tasks(
     nt_api_tasks = api.TasksApi(nt_client)
     nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
     nt_api_comments = api.CommentsApi(nt_client)
-    _, nt_member_id = nt_members_by_email(nt_client)
     user_matches = match_nt_users(
         nt_client, [elt.get("email") for elt in asana_users(asana_client)]
     )
 
     def _get_responsible_id(assignee: dict):
-        """Get Nozbe author_id given asana's user"""
+        """Get Nozbe responsible_id given asana's user"""
         if (
             assignee
             and (gid := assignee.get("gid"))
@@ -261,12 +261,13 @@ def _import_tasks(
             "tasks", name := trim(task_full.get("name", "")), imported
         ) or nt_api_tasks.post_task(
             models.Task(
+                id=id16(),
                 name=name,
                 missed_repeats=0,
                 is_followed=False,
                 is_abandoned=False,
                 project_id=nt_project_id,
-                author_id=id16(),
+                author_id=nt_member_id,
                 created_at=1,
                 last_activity_at=1,
                 project_section_id=_map_section_id(task_full, map_section_id),
@@ -274,6 +275,7 @@ def _import_tasks(
                 responsible_id=responsible_id,
                 is_all_day=not task_full.get("due_at"),
                 ended_at=parse_timestamp(task_full.get("completed_at")),
+                extra="",
             )
         )
         if not nt_task:
@@ -305,7 +307,7 @@ def _import_tasks(
                     is_pinned=False,
                     extra="",
                     task_id=task_id,
-                    author_id=id16(),
+                    author_id=nt_member_id,
                     created_at=1,
                 )
             )

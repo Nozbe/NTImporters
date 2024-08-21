@@ -61,7 +61,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
 def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_token: str):
     """Import everything from monday to Nozbe"""
     projects_api = api.ProjectsApi(nt_client)
-    curr_member = current_nt_member(nt_client)
+    curr_member = current_nt_member(nt_client, team_id)
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
 
     def _import_project(project: dict, curr_member: str):
@@ -71,7 +71,7 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
         project_model = models.Project(
             name=(name := trim(project.get("name", ""))),
             team_id=team_id,
-            author_id=id16(),
+            author_id=curr_member,
             created_at=1,
             last_event_at=1,
             is_template=False,
@@ -198,11 +198,12 @@ def _import_tasks(
                 missed_repeats=0,
                 name=name,
                 project_id=nt_project_id,
-                author_id=id16(),
+                author_id=author_id,
                 created_at=1,
                 last_activity_at=1,
                 project_section_id=sections_mapping.get(task.get("group")),
                 project_position=float(task.get("position") or 1.0),
+                extra="",
                 due_at=task.get("due_at"),
                 is_all_day=task.get("is_all_day"),
                 responsible_id=responsible_id if task.get("due_at") else None,
@@ -211,16 +212,24 @@ def _import_tasks(
             if task.get("due_at") and not responsible_id:
                 set_unassigned_tag(nt_client, str(nt_task.id))
             _import_comments(
-                nt_client, monday_client, str(nt_task.id), task.get("id"), imported=imported
+                nt_client,
+                monday_client,
+                str(nt_task.id),
+                task.get("id"),
+                imported=imported,
+                author_id=author_id,
             )
 
 
 # pylint: enable=too-many-arguments
 
 
-def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None):
+def _import_comments(
+    nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None, author_id=None
+):
     """Import task-related comments"""
     nt_api_comments = api.CommentsApi(nt_client)
+    author_id = author_id or id16()
     for comment in sorted(
         monday_client.comments(tr_task_id),
         key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
@@ -233,7 +242,7 @@ def _import_comments(nt_client, monday_client, nt_task_id: str, tr_task_id: str,
                     body=body,
                     task_id=nt_task_id,
                     created_at=1,
-                    author_id=id16(),
+                    author_id=author_id,
                     extra="",
                 )
             )

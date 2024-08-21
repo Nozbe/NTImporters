@@ -17,7 +17,7 @@ HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = f"https://{HOST}.nozbe.com/v1/api"
-# API_HOST = f"http://localhost:8888/v1/api"
+# API_HOST = "http://localhost:8888/v1/api"
 
 
 def id16():
@@ -204,16 +204,20 @@ def get_single_tasks_project_id(nt_client, team_id: str) -> Optional[str]:
     return str(st_projects[0].id) if st_projects and st_projects[0] else None
 
 
-def current_nt_member(nt_client) -> Optional[str]:
+def current_nt_member(nt_client, team_id: str | None = None) -> Optional[str]:
     """Map current NT member id"""
-    return nt_members_by_email(nt_client)[1]
+    return nt_members_by_email(nt_client, team_id)[1] or id16()
 
 
 @functools.cache
-def nt_members_by_email(nt_client) -> Tuple[dict, str]:
+def nt_members_by_email(nt_client, team_id: str | None = None) -> Tuple[dict, str]:
     """Map NT emails to member ids"""
     nt_members = {
-        str(elt.user_id): str(elt.id) for elt in api.TeamMembersApi(nt_client).get_team_members()
+        str(elt.user_id): str(elt.id)
+        for elt in filter(
+            lambda elt: elt.team_id == team_id if team_id else True,
+            api.TeamMembersApi(nt_client).get_team_members(),
+        )
     }
     current_user_id, mapping = nt_client.configuration.username, {}
     for user in api.UsersApi(nt_client).get_users():
