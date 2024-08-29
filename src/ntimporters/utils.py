@@ -16,7 +16,7 @@ from openapi_client import models, api, Color
 HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
-API_HOST = f"https://{HOST}.nozbe.com/v1/api"
+API_HOST = getenv("CUSTOM_API_HOST") or f"https://{HOST}.nozbe.com/v1/api"
 # API_HOST = "http://localhost:8888/v1/api"
 
 

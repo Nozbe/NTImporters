@@ -83,8 +83,11 @@ def _asana_projects_len(asana_client: asana.ApiClient) -> int:
     """Get number of asana projects"""
     total = 0
     for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
+        if (workspace_gid := workspace.get("gid")) == "1162055570357937":
+            # Skip Asana Ambassadors workspace
+            continue
         total += len(
-            list(asana.ProjectsApi(asana_client).get_projects_for_workspace(workspace["gid"], {}))
+            list(asana.ProjectsApi(asana_client).get_projects_for_workspace(workspace_gid, {}))
         )
 
     return total
@@ -107,10 +110,13 @@ def _import_data(
     )
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
     for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
+        if (workspace_gid := workspace.get("gid")) == "1162055570357937":
+            # Skip Asana Ambassadors workspace
+            continue
         # import tags
         map_tag_id = {}
         tags_api = asana.TagsApi(asana_client)
-        for tag in tags_api.get_tags_for_workspace(workspace["gid"], {}):
+        for tag in tags_api.get_tags_for_workspace(workspace_gid, {}):
             tag_full = tags_api.get_tag(tag["gid"], {})
             tag_name = tag_full.get("name", "")
             nt_tag = exists("tags", tag_name, imported)
@@ -121,7 +127,7 @@ def _import_data(
 
         # import projects
         projects_api = asana.ProjectsApi(asana_client)
-        for project in projects_api.get_projects_for_workspace(workspace["gid"], {}):
+        for project in projects_api.get_projects_for_workspace(workspace_gid, {}):
             project_full = projects_api.get_project(project["gid"], {})
             nt_project = exists(
                 "projects", project_name := trim(project_full.get("name", "")), imported
@@ -193,7 +199,7 @@ def _import_data(
             nt_client,
             asana_client,
             asana.TasksApi(asana_client).get_tasks(
-                {"workspace": workspace["gid"], "assignee": me["gid"]}
+                {"workspace": workspace_gid, "assignee": me["gid"]}
             ),
             get_single_tasks_project_id(nt_client, team_id),
             {},
@@ -355,11 +361,16 @@ def _map_section_id(asana_task: dict, map_section_id: dict):
 def asana_users(asana_client):
     """Get asana users from all workspaces"""
     users = []
-
     for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
+        if (workspace_gid := workspace.get("gid")) == "1162055570357937":
+            # Skip Asana Ambassadors workspace
+            continue
         users += list(
-            asana.UsersApi(asana_client).get_users_for_workspace(
-                workspace.get("gid"), {"opt_fields": "email"}
+            filter(
+                lambda elt: elt.get("email") is not None,
+                asana.UsersApi(asana_client).get_users(
+                    {"workspace": workspace_gid, "opt_fields": "email"}
+                ),
             )
         )
     # gid,email
