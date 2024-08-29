@@ -107,11 +107,10 @@ def _import_data(
     )
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
     for workspace in get_workspaces(asana_client):
-        workspace_gid = workspace["gid"]
         # import tags
         map_tag_id = {}
         tags_api = asana.TagsApi(asana_client)
-        for tag in tags_api.get_tags_for_workspace(workspace_gid, {}):
+        for tag in tags_api.get_tags_for_workspace(workspace["gid"], {}):
             tag_full = tags_api.get_tag(tag["gid"], {})
             tag_name = tag_full.get("name", "")
             nt_tag = exists("tags", tag_name, imported)
@@ -122,7 +121,7 @@ def _import_data(
 
         # import projects
         projects_api = asana.ProjectsApi(asana_client)
-        for project in projects_api.get_projects_for_workspace(workspace_gid, {}):
+        for project in projects_api.get_projects_for_workspace(workspace["gid"], {}):
             project_full = projects_api.get_project(project["gid"], {})
             nt_project = exists(
                 "projects", project_name := trim(project_full.get("name", "")), imported
@@ -194,7 +193,7 @@ def _import_data(
             nt_client,
             asana_client,
             asana.TasksApi(asana_client).get_tasks(
-                {"workspace": workspace_gid, "assignee": me["gid"]}
+                {"workspace": workspace["gid"], "assignee": me["gid"]}
             ),
             get_single_tasks_project_id(nt_client, team_id),
             {},
