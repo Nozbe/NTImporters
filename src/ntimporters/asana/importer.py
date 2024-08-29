@@ -84,9 +84,7 @@ def _asana_projects_len(asana_client: asana.ApiClient) -> int:
     total = 0
     for workspace in get_workspaces(asana_client):
         total += len(
-            list(
-                asana.ProjectsApi(asana_client).get_projects_for_workspace(workspace.get("gid"), {})
-            )
+            list(asana.ProjectsApi(asana_client).get_projects_for_workspace(workspace["gid"], {}))
         )
 
     return total
@@ -109,7 +107,7 @@ def _import_data(
     )
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
     for workspace in get_workspaces(asana_client):
-        workspace_gid = workspace.get("gid")
+        workspace_gid = workspace["gid"]
         # import tags
         map_tag_id = {}
         tags_api = asana.TagsApi(asana_client)
@@ -363,7 +361,7 @@ def asana_users(asana_client):
             filter(
                 lambda elt: elt.get("email") is not None,
                 asana.UsersApi(asana_client).get_users(
-                    {"workspace": workspace.get("gid"), "opt_fields": "email"}
+                    {"workspace": workspace["gid"], "opt_fields": "email"}
                 ),
             )
         )
@@ -375,7 +373,7 @@ def get_workspaces(asana_client) -> list:
     # Return accessible asana workspaces, Skip Asana Ambassadors workspace
     return list(
         filter(
-            lambda workspace: workspace.get("gid") != "1162055570357937",
+            lambda workspace: workspace["gid"] != "1162055570357937",
             asana.WorkspacesApi(asana_client).get_workspaces({}),
         )
     )
