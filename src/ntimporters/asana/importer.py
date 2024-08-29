@@ -82,12 +82,11 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
 def _asana_projects_len(asana_client: asana.ApiClient) -> int:
     """Get number of asana projects"""
     total = 0
-    for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
-        if (workspace_gid := workspace.get("gid")) == "1162055570357937":
-            # Skip Asana Ambassadors workspace
-            continue
+    for workspace in get_workspaces(asana_client):
         total += len(
-            list(asana.ProjectsApi(asana_client).get_projects_for_workspace(workspace_gid, {}))
+            list(
+                asana.ProjectsApi(asana_client).get_projects_for_workspace(workspace.get("gid"), {})
+            )
         )
 
     return total
@@ -109,10 +108,8 @@ def _import_data(
         _asana_projects_len(asana_client) + nt_open_projects_len(nt_client, team_id),
     )
     imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
-    for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
-        if (workspace_gid := workspace.get("gid")) == "1162055570357937":
-            # Skip Asana Ambassadors workspace
-            continue
+    for workspace in get_workspaces(asana_client):
+        workspace_gid = workspace.get("gid")
         # import tags
         map_tag_id = {}
         tags_api = asana.TagsApi(asana_client)
@@ -361,17 +358,24 @@ def _map_section_id(asana_task: dict, map_section_id: dict):
 def asana_users(asana_client):
     """Get asana users from all workspaces"""
     users = []
-    for workspace in asana.WorkspacesApi(asana_client).get_workspaces({}):
-        if (workspace_gid := workspace.get("gid")) == "1162055570357937":
-            # Skip Asana Ambassadors workspace
-            continue
+    for workspace in get_workspaces(asana_client):
         users += list(
             filter(
                 lambda elt: elt.get("email") is not None,
                 asana.UsersApi(asana_client).get_users(
-                    {"workspace": workspace_gid, "opt_fields": "email"}
+                    {"workspace": workspace.get("gid"), "opt_fields": "email"}
                 ),
             )
         )
     # gid,email
     return users
+
+
+def get_workspaces(asana_client) -> list:
+    # Return accessible asana workspaces, Skip Asana Ambassadors workspace
+    return list(
+        filter(
+            lambda workspace: workspace.get("gid") != "1162055570357937",
+            asana.WorkspacesApi(asana_client).get_workspaces({}),
+        )
+    )
