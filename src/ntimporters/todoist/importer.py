@@ -344,7 +344,7 @@ def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) ->
         "tags",
         len(todoist_tags := todoist_client.get_labels()) + len(nt_tags),
     )
-    for tag in todoist_client.get_labels():
+    for tag in todoist_tags:
         tag_name = str(tag.name)
         nt_tags[tag_name] = nt_tags.get(tag_name) or post_tag(nt_client, tag_name, str(tag.color))
     return nt_tags
