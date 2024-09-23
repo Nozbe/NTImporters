@@ -76,6 +76,7 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
 
 def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
     """Check if entity already exists and return its id"""
+
     if imported_entities:
         if (records := imported_entities.get(entity_type)) and (record := records.get(name)):
             return record

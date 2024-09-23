@@ -237,6 +237,7 @@ def _import_tags_per_project(
         "tags",
         len(trello_tags := trello_client.tags(project.get("id"))) + len(nt_tags),
     )
+
     for tag in trello_tags:
         if (tag_name := (tag.get("name") or "Unnamed")) not in nt_tags and (
             nt_tag_id := post_tag(nt_client, tag_name, tag.get("color"))
