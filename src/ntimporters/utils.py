@@ -76,6 +76,7 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
 
 def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
     """Check if entity already exists and return its id"""
+
     if imported_entities:
         if (records := imported_entities.get(entity_type)) and (record := records.get(name)):
             return record
@@ -152,10 +153,7 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
 def set_unassigned_tag(nt_client, task_id: str):
     """set 'missing responsibility' tag"""
     tag_name, tag_id = "missing responsibility", None
-    st_tags = api.TagsApi(nt_client).get_tags(limit=1, name=tag_name)
-
-    tag_id = st_tags[0].id if st_tags and st_tags[0] else post_tag(nt_client, tag_name, None)
-    if tag_id:
+    if tag_id := post_tag(nt_client, tag_name, None):
         args = {"tag_id": str(tag_id), "task_id": str(task_id)}
         if not api.TagAssignmentsApi(nt_client).get_tag_assignments(**args, limit=1):
             try:
@@ -233,7 +231,6 @@ def nt_members_by_email(nt_client, team_id: str | None = None) -> Tuple[dict, st
 
 def trim(name: str):
     """Return max 255 characters"""
-    # return (name or "Untitled")[:255]
     if isinstance(name, str):
         return name[:255] or "Untitled"
     return name or "Untitled"
@@ -247,14 +244,14 @@ def parse_timestamp(datetime: Optional[str]):
 
 
 def post_tag(nt_client, tag_name: str, color: str):
-    """Post tag to Nozbe"""
+    """Post tag to Nozbe if not existing"""
+    st_tags = api.TagsApi(nt_client).get_tags(limit=1, name=tag_name)
+
+    if st_tags and st_tags[0]:
+        return str(st_tags[0].id)
     try:
         nt_tag = api.TagsApi(nt_client).post_tag(
-            models.Tag(
-                id=id16(),
-                name=trim(tag_name),
-                color=map_color(color),
-            )
+            models.Tag(id=id16(), name=trim(tag_name), team_id=None, color=map_color(color))
         )
         return str(nt_tag.id) if nt_tag else None
     except Exception as exc:

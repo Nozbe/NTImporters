@@ -97,7 +97,8 @@ def _import_data(
                     or nt_project_api.post_project(project_model)
                     or {}
                 )
-            except Exception:
+            except Exception as e:
+                print(e)
                 return
 
             if not (nt_project_id := nt_project and str(nt_project.id)):
@@ -190,8 +191,8 @@ def _import_project_sections(
                     )
                 ):
                     mapping[section.id] = str(nt_section.id)
-            except OpenApiException:
-                pass
+            except OpenApiException as e:
+                print(e)
     _import_tasks(
         nt_client,
         todoist_client,
@@ -301,10 +302,10 @@ def _import_tasks(
                     nt_api_tag_assignments,
                     str(nt_task.id),
                     tags_mapping,
-                    task.get("label_ids") or [],
+                    task.get("labels") or [],
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(e)
 
 
 # pylint: enable=too-many-arguments
@@ -318,8 +319,8 @@ def _import_tags_assignments(
     nt_api_tag_assignments, nt_task_id: str, tags_mapping: dict, task_tags: list
 ):
     """Assign tags to task"""
-    for tag_id in task_tags:
-        if nt_tag_id := tags_mapping.get(str(tag_id)):
+    for tag_name in task_tags:
+        if nt_tag_id := tags_mapping.get(tag_name):
             try:
                 nt_api_tag_assignments.post_tag_assignment(
                     models.TagAssignment(
@@ -328,8 +329,8 @@ def _import_tags_assignments(
                         task_id=nt_task_id,
                     )
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(e)
 
 
 def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) -> dict:
@@ -343,15 +344,10 @@ def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) ->
         "tags",
         len(todoist_tags := todoist_client.get_labels()) + len(nt_tags),
     )
-    mapping = {}
     for tag in todoist_tags:
-        if (tag_name := str(tag.name)) not in nt_tags and (
-            nt_tag_id := post_tag(nt_client, tag_name, tag.color)
-        ):
-            mapping[tag.id] = str(nt_tag_id)
-        elif tag_name in nt_tags:
-            mapping[str(tag.id)] = nt_tags.get(tag_name)
-    return mapping
+        tag_name = str(tag.name)
+        nt_tags[tag_name] = nt_tags.get(tag_name) or post_tag(nt_client, tag_name, str(tag.color))
+    return nt_tags
 
 
 @dataclass
