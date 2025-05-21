@@ -18,7 +18,7 @@ setup(
     install_requires=[
         "python_dateutil",
         "asana>=5.0.6",
-        "todoist-api-python",
-        "todoist-python",
+        "todoist-api-python==3.1.0",
+        "todoist-python==8.1.4",
     ],
 )
