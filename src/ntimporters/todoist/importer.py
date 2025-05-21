@@ -28,6 +28,11 @@ from openapi_client.exceptions import OpenApiException
 from todoist_api_python.api import TodoistAPI
 
 from todoist import TodoistAPI as TodoistAPISync
+import itertools
+
+
+def unpack(paginator):
+    return list(itertools.chain.from_iterable(paginator))
 
 
 SPEC = {
@@ -61,7 +66,6 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
             team_id,
             nt_auth_token,
         )
-
     except Exception as exc:
         return exc
     return None
@@ -120,7 +124,7 @@ def _import_data(
             imported=imported,
         )
 
-    todoist_projects = todoist_client.get_projects()
+    todoist_projects = unpack(todoist_client.get_projects())
     check_limits(
         nt_auth_token,
         team_id,
@@ -177,7 +181,7 @@ def _import_project_sections(
     # import project sections
     mapping = {}
     if project.name != "Inbox":
-        for section in todoist_client.get_sections(project_id=project.id):
+        for section in unpack(todoist_client.get_sections(project_id=project.id)):
             try:
                 if nt_section := exists(
                     "project_sections", name := trim(section.name), imported
@@ -229,10 +233,7 @@ def _import_tasks(
     def _parse_timestamp(todoist_date):
         """Parses todoist timestamp into NT timestamp format"""
         if isinstance(todoist_date, str):
-            return (
-                int(isoparse(todoist_date).timestamp() * 1000),
-                len(todoist_date) == 10,
-            )
+            return int(isoparse(todoist_date).timestamp() * 1000), len(todoist_date) == 10
 
         if not todoist_date or not any((todoist_date.get("date"), todoist_date.get("datetime"))):
             return None, False
@@ -261,7 +262,7 @@ def _import_tasks(
 
     # get tasks and completed tasks, while completed tasks are fetched from sync api
     for task in todoist_sync_client.completed.get_all(project_id=to_project_id).get("items", []) + [
-        task.to_dict() for task in todoist_client.get_tasks(project_id=to_project_id)
+        task.to_dict() for task in unpack(todoist_client.get_tasks(project_id=to_project_id))
     ]:
         due_at, is_all_day = _parse_timestamp(task.get("due"))
         should_set_tag, responsible_id = _get_responsible_id(task)
@@ -342,7 +343,7 @@ def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) ->
         team_id,
         nt_client,
         "tags",
-        len(todoist_tags := todoist_client.get_labels()) + len(nt_tags),
+        len(todoist_tags := unpack(todoist_client.get_labels())) + len(nt_tags),
     )
     for tag in todoist_tags:
         tag_name = str(tag.name)
@@ -364,8 +365,7 @@ def _import_comments(
     nt_api_comments = api.CommentsApi(nt_client)
 
     comments = sorted(
-        todoist_client.get_comments(task_id=task.get("id")),
-        key=lambda elt: isoparse(elt.posted_at).timestamp(),
+        unpack(todoist_client.get_comments(task_id=task.get("id"))), key=lambda elt: elt.posted_at
     )
     if task.get("description"):
         comments.insert(0, Comment(content=task.get("description")))

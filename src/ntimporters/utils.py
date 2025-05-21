@@ -1,4 +1,4 @@
-""" Common helper functions """
+"""Common helper functions"""
 
 import string
 import functools
