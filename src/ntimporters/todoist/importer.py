@@ -313,7 +313,9 @@ def _import_tasks(
 @functools.cache
 def todoist_members(todoist_client, project_id: str):
     """Get todoist collaborators per project"""
-    return {elt.id: elt.email for elt in todoist_client.get_collaborators(project_id=project_id)}
+    return {
+        elt.id: elt.email for elt in unpack(todoist_client.get_collaborators(project_id=project_id))
+    }
 
 
 def _import_tags_assignments(
