@@ -15,10 +15,5 @@ setup(
     author="jsamelak",
     author_email="jarek@nozbe.com",
     license="MIT",
-    install_requires=[
-        "python_dateutil",
-        "asana>=5.0.6",
-        "todoist-api-python==3.1.0",
-        "todoist-python==8.1.4",
-    ],
+    install_requires=["python_dateutil", "asana>=5.0.6", "todoist-api-python==3.1.0"],
 )

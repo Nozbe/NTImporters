@@ -27,7 +27,6 @@ from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
 from todoist_api_python.api import TodoistAPI
 
-from todoist import TodoistAPI as TodoistAPISync
 import itertools
 
 
@@ -62,7 +61,6 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                 )
             ),
             RLProxy(TodoistAPI(auth_token)),
-            TodoistAPISync(auth_token, api_version="v9"),
             team_id,
             nt_auth_token,
         )
@@ -71,9 +69,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
     return None
 
 
-def _import_data(
-    nt_client: nt.ApiClient, todoist_client, todoist_sync_client, team_id: str, nt_auth_token: str
-):
+def _import_data(nt_client: nt.ApiClient, todoist_client, team_id: str, nt_auth_token: str):
     """Import everything from todoist to Nozbe"""
     nt_project_api = api.ProjectsApi(nt_client)
     single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
@@ -114,7 +110,6 @@ def _import_data(
         _import_project_sections(
             nt_client,
             todoist_client,
-            todoist_sync_client,
             nt_project_id,
             project,
             nt_members_by_email(nt_client, team_id),
@@ -166,7 +161,6 @@ def _import_members(
 def _import_project_sections(
     nt_client,
     todoist_client,
-    todoist_sync_client,
     nt_project_id: str,
     project: dict,
     nt_members: tuple[dict, str],
@@ -200,7 +194,6 @@ def _import_project_sections(
     _import_tasks(
         nt_client,
         todoist_client,
-        todoist_sync_client,
         mapping,
         nt_members,
         nt_project_id,
@@ -215,7 +208,6 @@ def _import_project_sections(
 def _import_tasks(
     nt_client,
     todoist_client,
-    todoist_sync_client,
     sections_mapping: dict,
     nt_members: dict,
     nt_project_id: str,
@@ -239,8 +231,7 @@ def _import_tasks(
             return None, False
         return (
             int(
-                isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp()
-                * 1000
+                isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp() * 1000
             ),
             todoist_date.get("datetime", None) is None,
         )
@@ -260,8 +251,7 @@ def _import_tasks(
 
         return should_set_tag, responsible_id
 
-    # get tasks and completed tasks, while completed tasks are fetched from sync api
-    for task in todoist_sync_client.completed.get_all(project_id=to_project_id).get("items", []) + [
+    for task in [
         task.to_dict() for task in unpack(todoist_client.get_tasks(project_id=to_project_id))
     ]:
         due_at, is_all_day = _parse_timestamp(task.get("due"))
@@ -285,7 +275,7 @@ def _import_tasks(
                 due_at=due_at,
                 is_all_day=is_all_day,
                 responsible_id=responsible_id,
-                ended_at=_parse_timestamp(task.get("completed_date"))[0],
+                ended_at=_parse_timestamp(task.get("completed_at"))[0],
             )
         ):
             if not is_sap and should_set_tag:
