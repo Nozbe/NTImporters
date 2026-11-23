@@ -13,7 +13,7 @@ import requests
 from ntimporters.rate_limiting import RLProxy
 from ntimporters.todoist.recurrence import to_rrule
 from ntimporters.utils import (
-    API_HOST,
+    nt_api_client,
     add_to_project_group,
     assign_tags,
     check_limits,
@@ -76,13 +76,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception |
 
     try:
         _import_data(
-            nt.ApiClient(
-                configuration=nt.Configuration(
-                    host=API_HOST,
-                    api_key={"ApiKeyAuth": nt_auth_token},
-                    username=nt_auth_token.split("_")[0],
-                )
-            ),
+            nt_api_client(nt_auth_token),
             RLProxy(TodoistAPI(auth_token)),
             auth_token,
             team_id,
@@ -240,7 +234,7 @@ def _import_task(
     if not (
         nt_task := nt_task
         or api.TasksApi(ctx.nt_client).post_task(
-            models.Task(
+            models.PostTaskRequest(
                 id=id16(),
                 is_followed=False,
                 is_abandoned=False,

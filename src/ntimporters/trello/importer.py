@@ -1,11 +1,10 @@
 """Trello -> Nozbe importer"""
 
-from typing import Optional
 
 import openapi_client as nt
 from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
-    API_HOST,
+    nt_api_client,
     add_to_project_group,
     assign_tags,
     check_limits,
@@ -38,7 +37,7 @@ IMPORT_NAME = "Imported from Trello"
 # main method called by Nozbe app
 def run_import(
     nt_auth_token: str, auth_token: str, app_key: str, team_id: str
-) -> Optional[Exception]:
+) -> Exception | None:
     """Perform import from Trello to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
@@ -49,13 +48,7 @@ def run_import(
 
     try:
         _import_data(
-            nt.ApiClient(
-                configuration=nt.Configuration(
-                    host=API_HOST,
-                    api_key={"ApiKeyAuth": nt_auth_token},
-                    username=nt_auth_token.split("_")[0],
-                )
-            ),
+            nt_api_client(nt_auth_token),
             TrelloClient(app_key, auth_token),
             team_id,
             nt_auth_token,
@@ -182,7 +175,7 @@ def _import_project_sections(
             nt_task = exists("tasks", name := trim(task.get("name", "")), imported, nt_project_id)
             is_new = not nt_task
             if nt_task := nt_task or nt_api_tasks.post_task(
-                models.Task(
+                models.PostTaskRequest(
                     name=name,
                     project_id=nt_project_id,
                     author_id=nt_member_id,

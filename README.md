@@ -7,10 +7,9 @@
 List of supported APIs:
 
 - Asana - [API](https://developers.asana.com/docs/asana)
-- Trello [API](https://developer.atlassian.com/cloud/trello/rest/api-group-actions/)
-- Todoist [API](https://developer.todoist.com/rest/v1/#overview)
-- Monday [API](https://developer.todoist.com/rest/v1/#overview)
-- ...
+- Trello - [API](https://developer.atlassian.com/cloud/trello/rest/api-group-actions/)
+- Todoist - [API](https://developer.todoist.com/api/v1/)
+- Monday - [API](https://developer.monday.com/api-reference/)
 
 Nozbe API - https://nozbe.com/api
 
@@ -34,3 +33,31 @@ You are welcome to contribute to **NTImporters** project by creating PRs with im
 
 - Each importer should be located in a separate package in `/src/ntimporters`
 - Each importer should implement `SPEC` to identify importer and `run_import` method for performing import
+- Imported projects are kept in an "Imported from <app>" project group. Re-running an import matches projects by name, sections and tasks by name within their project, and comments by body within their task, so nothing is duplicated
+- Use the shared helpers in `ntimporters.utils` (`nt_api_client`, `exists`, `post_comment`, `assign_tags`, `upload_attachment`, ...) instead of calling the Nozbe API by hand
+
+## Development
+
+Requires [uv](https://docs.astral.sh/uv/) (and Java for regenerating the API client).
+
+```sh
+uv sync        # create .venv with all dependencies
+make lint      # ruff
+make test      # pytest
+```
+
+Run an importer against a local or dev Nozbe backend:
+
+```sh
+export CUSTOM_API_HOST=http://localhost:8888/v1/api   # or DEV_ACCESS_TOKEN=... for devapi4
+uv run python -c "from ntimporters.todoist import run_import; print(run_import('<nozbe api key>', '<todoist token>', '<team id>'))"
+```
+
+### Nozbe API client
+
+`src/openapi_client` is generated from the backend's OpenAPI spec. Don't edit it by hand: customisations (API version header, dev token, 429 retries) live in `ntimporters.utils.nt_api_client`. To regenerate:
+
+```sh
+make client                                               # from production spec (what importers run against)
+make client SPEC=../Nozbe4Backend/NozbeKinto/nt_api/_build/openapi_bundled.yaml   # unreleased backend changes
+```

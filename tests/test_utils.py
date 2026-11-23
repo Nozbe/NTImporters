@@ -1,7 +1,7 @@
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
-from ntimporters.utils import exists, get_imported_entities, parse_timestamp
+from ntimporters.utils import exists, get_imported_entities, nt_api_client, parse_timestamp
 
 
 def test_imported_entities_chain():
@@ -43,3 +43,13 @@ def test_parse_timestamp_utc():
     assert parse_timestamp("2026-11-26") == 1795651200000
     assert parse_timestamp("2026-11-24T14:30:00") == parse_timestamp("2026-11-24T15:30:00+01:00")
     assert parse_timestamp(None) is None
+
+
+def test_nt_api_client(monkeypatch):
+    """Api-Version, dev token headers and 429 retries set outside generated code"""
+    monkeypatch.setenv("DEV_ACCESS_TOKEN", "dev")
+    client = nt_api_client("user_key")
+    assert client.default_headers.get("Api-Version") == "current"
+    assert client.default_headers.get("X-DevToken") == "dev"
+    assert client.configuration.username == "user"
+    assert 429 in client.configuration.retries.status_forcelist

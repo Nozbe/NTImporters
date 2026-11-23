@@ -1,12 +1,11 @@
 """Monday -> Nozbe importer"""
 
 import re
-from typing import Optional
 
 import openapi_client as nt
 from ntimporters.monday.monday_api import MondayClient
 from ntimporters.utils import (
-    API_HOST,
+    nt_api_client,
     add_to_project_group,
     check_limits,
     current_nt_member,
@@ -33,7 +32,7 @@ IMPORT_NAME = "Imported from Monday"
 
 
 # main method called by Nozbe app
-def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Exception]:
+def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Exception | None:
     """Perform import from monday to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
@@ -42,13 +41,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Excep
 
     try:
         _import_data(
-            nt.ApiClient(
-                configuration=nt.Configuration(
-                    host=API_HOST,
-                    api_key={"ApiKeyAuth": nt_auth_token},
-                    username=nt_auth_token.split("_")[0],
-                )
-            ),
+            nt_api_client(nt_auth_token),
             MondayClient(app_key),
             team_id,
             nt_auth_token,
@@ -195,7 +188,7 @@ def _import_tasks(
         if nt_task := exists(
             "tasks", name := trim(task.get("name", "")), imported, nt_project_id
         ) or nt_api_tasks.post_task(
-            models.Task(
+            models.PostTaskRequest(
                 is_followed=False,
                 is_abandoned=False,
                 missed_repeats=0,

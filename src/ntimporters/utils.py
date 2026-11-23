@@ -12,16 +12,41 @@ from datetime import UTC
 from os import getenv
 from pathlib import Path
 
+import openapi_client as nt
 import requests
 from dateutil.parser import isoparse
 from more_itertools import first, unique_everseen
 from openapi_client import Color, api, models
+from urllib3.util.retry import Retry
 
 HOST = "api4"
 if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = getenv("CUSTOM_API_HOST") or f"https://{HOST}.nozbe.com/v1/api"
 # API_HOST = "http://localhost:8888/v1/api"
+
+
+def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
+    """NT API client: current API version, dev token, 429 retried every 10 s up to 36 times"""
+    configuration = nt.Configuration(
+        host=API_HOST,
+        api_key={"ApiKeyAuth": nt_auth_token},
+        username=nt_auth_token.split("_")[0],
+    )
+    configuration.retries = Retry(
+        total=36,
+        status_forcelist=[429],
+        allowed_methods=None,
+        backoff_factor=10,
+        backoff_max=10,
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+    client = nt.ApiClient(configuration)
+    client.set_default_header("Api-Version", "current")
+    if devtoken := getenv("DEV_ACCESS_TOKEN"):
+        client.set_default_header("X-DevToken", devtoken)
+    return client
 
 
 def id16():
@@ -306,26 +331,19 @@ def post_task_recurrence(
     nt_client, project_id: str, task_id: str, pattern: str, is_all_day: bool
 ) -> str | None:
     """Create recurrence (RRULE pattern) of an existing task with due_at; return its id"""
-    response = nt_client.call_api(
-        *nt_client.param_serialize(
-            "POST",
-            "/task_recurrences",
-            header_params={"Accept": "application/json", "Content-Type": "application/json"},
-            body={"project_id": project_id, "current_task_id": task_id, "pattern": pattern},
-            auth_settings=["ApiKeyAuth"],
+    recurrence = api.TaskRecurrencesApi(nt_client).post_task_recurrence(
+        models.TaskRecurrence(
+            id=id16(), project_id=project_id, current_task_id=task_id, pattern=pattern
         )
     )
-    response.read()
-    if response.status not in (200, 201) or not (
-        recurrence_id := json.loads(response.data).get("id")
-    ):
+    if not (recurrence and recurrence.id):
         return None
     api.TasksApi(nt_client).put_task_by_id(
-        task_id,
         # PUT /tasks resets is_all_day unless sent
-        {"recurrence_id": recurrence_id, "is_all_day": is_all_day},
+        task_id,
+        models.Task(recurrence_id=recurrence.id, is_all_day=is_all_day),
     )
-    return recurrence_id
+    return str(recurrence.id)
 
 
 def nt_time_zone(nt_client) -> str:

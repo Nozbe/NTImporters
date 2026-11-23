@@ -1,11 +1,10 @@
 """Asana -> Nozbe importer"""
 
 import functools
-from typing import Optional
 
 import openapi_client as nt
 from ntimporters.utils import (
-    API_HOST,
+    nt_api_client,
     add_to_project_group,
     assign_tags,
     check_limits,
@@ -57,21 +56,14 @@ IMPORT_NAME = "Imported from Asana"
 
 
 # main method called by Nozbe app
-def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Exception]:
+def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception | None:
     """Perform import from Asana to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
     if not auth_token:
         return "Missing 'auth_token'"
     try:
-        nt_client = nt.ApiClient(
-            configuration=nt.Configuration(
-                host=API_HOST,
-                api_key={"ApiKeyAuth": nt_auth_token},
-                access_token=nt_auth_token,
-                username=nt_auth_token.split("_")[0],
-            )
-        )
+        nt_client = nt_api_client(nt_auth_token)
         conf = asana.Configuration()
         conf.access_token = auth_token
         asana_client = asana.ApiClient(conf)
@@ -269,7 +261,7 @@ def _import_tasks(
             )
         )
         nt_task = nt_task or nt_api_tasks.post_task(
-            models.Task(
+            models.PostTaskRequest(
                 id=id16(),
                 name=name,
                 missed_repeats=0,
@@ -326,7 +318,7 @@ def _import_tasks(
                 upload_attachment(nt_client, nt_comment_id, attachment.get("download_url"), name)
 
 
-def _map_color(asana_color: Optional[str]) -> Optional[models.Color]:
+def _map_color(asana_color: str | None) -> models.Color | None:
     """Maps Asana color onto Nozbe color"""
     if not asana_color:
         return None
