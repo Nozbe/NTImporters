@@ -27,6 +27,7 @@ FILLER = {"every", "each", "co", "każdy", "każdego", "każdą", "każda", "ka�
 FILLER |= {"and", "i", "oraz", "a", "on", "the"}
 
 TAIL = re.compile(r"\s(?:at|@|o|starting|from|until|ending|for|od|do|przez)\s.*$")
+UNTIL = re.compile(r"\s(?:until|ending|do)\s(\d{4})-(\d{2})-(\d{2})\b")
 NOISE = re.compile(
     r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b|\b\d{1,2}:\d{2}\b|\bof (?:the )?month\b|\bmiesiąca\b"
 )
@@ -34,6 +35,14 @@ NOISE = re.compile(
 
 def to_rrule(text: str | None) -> str | None:
     """Todoist due.string -> RRULE without DTSTART; None if unrecognised"""
+    if not (rule := _rule(text)):
+        return None
+    until = UNTIL.search(text.lower())
+    return f"{rule};UNTIL={''.join(until.groups())}" if until else rule
+
+
+def _rule(text: str | None) -> str | None:
+    """RRULE FREQ/INTERVAL/BY* part of due.string"""
     text = TAIL.sub("", f" {(text or '').lower().replace('!', '')} ")
     tokens = [t for t in re.split(r"[\s,]+", NOISE.sub(" ", text)) if t and t not in FILLER]
     interval = 1

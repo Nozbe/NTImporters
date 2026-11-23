@@ -136,9 +136,13 @@ def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: s
         ):
             group_id = group.id
         args = {"object_id": str(project_id), "group_id": str(group_id), "group_type": "project"}
-        if group_id and not api.GroupAssignmentsApi(nt_client).get_group_assignments(
-            limit=1, **args
-        ):
+        # API ignores object_id filter: match it here
+        if group_id and str(project_id) not in {
+            str(elt.object_id)
+            for elt in api.GroupAssignmentsApi(nt_client).get_group_assignments(
+                group_id=str(group_id), group_type="project"
+            )
+        }:
             api.GroupAssignmentsApi(nt_client).post_group_assignment(
                 models.GroupAssignment(id=id16(), **args)
             )
@@ -255,7 +259,9 @@ def post_tag(nt_client, tag_name: str, color: str):
     return None
 
 
-def post_task_recurrence(nt_client, project_id: str, task_id: str, pattern: str) -> str | None:
+def post_task_recurrence(
+    nt_client, project_id: str, task_id: str, pattern: str, is_all_day: bool
+) -> str | None:
     """Create recurrence (RRULE pattern) of an existing task with due_at; return its id"""
     response = nt_client.call_api(
         *nt_client.param_serialize(
@@ -271,7 +277,11 @@ def post_task_recurrence(nt_client, project_id: str, task_id: str, pattern: str)
         recurrence_id := json.loads(response.data).get("id")
     ):
         return None
-    api.TasksApi(nt_client).put_task_by_id(task_id, {"recurrence_id": recurrence_id})
+    api.TasksApi(nt_client).put_task_by_id(
+        task_id,
+        # PUT /tasks resets is_all_day unless sent
+        {"recurrence_id": recurrence_id, "is_all_day": is_all_day},
+    )
     return recurrence_id
 
 

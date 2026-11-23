@@ -34,6 +34,7 @@ def test_parse_due_empty():
         ("every last day of the month", "FREQ=MONTHLY;BYMONTHDAY=-1"),
         ("every 3rd friday", "FREQ=MONTHLY;BYDAY=FR;BYSETPOS=3"),
         ("every year", "FREQ=YEARLY"),
+        ("every 3 days ending 2029-01-19", "FREQ=DAILY;INTERVAL=3;UNTIL=20290119"),
         ("codziennie o 8:00", "FREQ=DAILY"),
         ("co 2 tygodnie", "FREQ=WEEKLY;INTERVAL=2"),
         ("w każdą środę", "FREQ=WEEKLY;BYDAY=WE"),

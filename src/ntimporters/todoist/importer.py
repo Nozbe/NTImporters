@@ -108,12 +108,26 @@ def _import_data(nt_client, todoist, todoist_token: str, team_id: str, nt_auth_t
         team_id=team_id,
         author_id=current_nt_member(nt_client, team_id),
         single_tasks_id=get_single_tasks_project_id(nt_client, team_id),
-        time_zone=nt_time_zone(nt_client),
+        time_zone=_todoist_time_zone(todoist_token) or nt_time_zone(nt_client),
         imported=get_imported_entities(nt_client, team_id, IMPORT_NAME),
         tags=_import_tags(nt_client, todoist, team_id, nt_auth_token),
     )
     for project in projects:
         _import_project(ctx, project)
+
+
+def _todoist_time_zone(token: str) -> str | None:
+    """Todoist user's time zone"""
+    try:
+        response = requests.get(
+            "https://api.todoist.com/api/v1/user",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return (response.json().get("tz_info") or {}).get("timezone")
+    except requests.RequestException:
+        return None
 
 
 def _import_project(ctx: Ctx, project: Project):
@@ -217,7 +231,7 @@ def _import_task(
         responsible_id = ctx.author_id
 
     if nt_task := exists("tasks", name := trim(task.content), ctx.imported, nt_project_id):
-        nt_task_id = str(nt_task.id)
+        nt_task_id, is_new = str(nt_task.id), False
     elif nt_task := api.TasksApi(ctx.nt_client).post_task(
         models.Task(
             id=id16(),
@@ -237,9 +251,9 @@ def _import_task(
             responsible_id=responsible_id,
         )
     ):
-        nt_task_id = str(nt_task.id)
+        nt_task_id, is_new = str(nt_task.id), True
         if due_at is not None and task.due.is_recurring:
-            _import_recurrence(ctx, nt_project_id, nt_task_id, task.due)
+            _import_recurrence(ctx, nt_project_id, nt_task_id, task.due, is_all_day)
     else:
         return
 
@@ -247,16 +261,16 @@ def _import_task(
         set_unassigned_tag(ctx.nt_client, nt_task_id)
     try:
         _import_comments(ctx, nt_task_id, task)
-        _import_tag_assignments(ctx, nt_task_id, task.labels or [])
+        _import_tag_assignments(ctx, nt_task_id, task.labels or [], is_new)
     except Exception as exc:
         print(exc)
 
 
-def _import_recurrence(ctx: Ctx, nt_project_id: str, nt_task_id: str, due: Due):
+def _import_recurrence(ctx: Ctx, nt_project_id: str, nt_task_id: str, due: Due, is_all_day: bool):
     """Set task recurrence; unparsed rule goes to a comment"""
     try:
         if (pattern := to_rrule(due.string)) and post_task_recurrence(
-            ctx.nt_client, nt_project_id, nt_task_id, pattern
+            ctx.nt_client, nt_project_id, nt_task_id, pattern, is_all_day
         ):
             return
     except Exception as exc:
@@ -264,12 +278,18 @@ def _import_recurrence(ctx: Ctx, nt_project_id: str, nt_task_id: str, due: Due):
     _post_comment(ctx, nt_task_id, f"Todoist: {due.string}")
 
 
-def _import_tag_assignments(ctx: Ctx, nt_task_id: str, labels: list[str]):
-    """Assign tags to task"""
+def _import_tag_assignments(ctx: Ctx, nt_task_id: str, labels: list[str], is_new: bool):
+    """Assign tags to task, skipping already assigned ones"""
+    tag_assignments = api.TagAssignmentsApi(ctx.nt_client)
+    assigned = (
+        set()
+        if is_new
+        else {str(elt.tag_id) for elt in tag_assignments.get_tag_assignments(task_id=nt_task_id)}
+    )
     for label in labels:
-        if nt_tag_id := ctx.tags.get(label):
+        if (nt_tag_id := ctx.tags.get(label)) and nt_tag_id not in assigned:
             try:
-                api.TagAssignmentsApi(ctx.nt_client).post_tag_assignment(
+                tag_assignments.post_tag_assignment(
                     models.TagAssignment(id=id16(), tag_id=nt_tag_id, task_id=nt_task_id)
                 )
             except Exception as exc:
