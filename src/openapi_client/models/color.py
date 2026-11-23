@@ -66,6 +66,12 @@ class Color(str, Enum):
     TEAL = 'teal'
     ULTRAMARINE = 'ultramarine'
     YELLOW = 'yellow'
+    AMBER = 'amber'
+    CORAL = 'coral'
+    PLUM = 'plum'
+    ROSEWOOD = 'rosewood'
+    SAGE = 'sage'
+    STEEL = 'steel'
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:

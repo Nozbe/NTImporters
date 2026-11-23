@@ -19,7 +19,7 @@ import re  # noqa: F401
 import json
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from typing import Optional, Set
 from typing_extensions import Self
@@ -33,7 +33,8 @@ class Reminder(BaseModel):
     remind_at: StrictInt
     is_relative: StrictBool
     is_all_day: StrictBool
-    __properties: ClassVar[List[str]] = ["id", "task_id", "remind_at", "is_relative", "is_all_day"]
+    is_urgent: Optional[StrictBool] = False
+    __properties: ClassVar[List[str]] = ["id", "task_id", "remind_at", "is_relative", "is_all_day", "is_urgent"]
 
     @field_validator('id')
     def id_validate_regular_expression(cls, value):
@@ -106,7 +107,8 @@ class Reminder(BaseModel):
             "task_id": obj.get("task_id"),
             "remind_at": obj.get("remind_at"),
             "is_relative": obj.get("is_relative") if obj.get("is_relative") is not None else False,
-            "is_all_day": obj.get("is_all_day") if obj.get("is_all_day") is not None else False
+            "is_all_day": obj.get("is_all_day") if obj.get("is_all_day") is not None else False,
+            "is_urgent": obj.get("is_urgent") if obj.get("is_urgent") is not None else False
         })
         return _obj
 

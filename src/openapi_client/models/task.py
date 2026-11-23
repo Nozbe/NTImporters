@@ -29,17 +29,17 @@ class Task(BaseModel):
     Task
     """ # noqa: E501
     id: Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]] = None
-    name: Annotated[str, Field(min_length=1, strict=True, max_length=255)]
+    name: Optional[Annotated[str, Field(min_length=1, strict=True, max_length=255)]] = None
     project_id: Optional[Annotated[str, Field(min_length=0, strict=True, max_length=16)]] = None
     project_section_id: Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]] = None
-    author_id: Annotated[str, Field(min_length=16, strict=True, max_length=16)]
+    author_id: Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]] = None
     responsible_id: Optional[Annotated[str, Field(min_length=6, strict=True, max_length=16)]] = None
     recurrence_id: Optional[Annotated[str, Field(min_length=16, strict=True, max_length=16)]] = None
-    created_at: Annotated[int, Field(strict=True, ge=0)]
+    created_at: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
     last_modified: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
-    due_at: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
+    due_at: Optional[StrictInt] = None
     ended_at: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
-    last_activity_at: Annotated[int, Field(strict=True, ge=0)]
+    last_activity_at: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
     last_seen_activity_at: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
     last_reviewed_at: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
     review_triggered_at: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
@@ -53,7 +53,8 @@ class Task(BaseModel):
     time_needed: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
     time_spent: Optional[Annotated[int, Field(strict=True, ge=0)]] = None
     type: Optional[StrictStr] = None
-    __properties: ClassVar[List[str]] = ["id", "name", "project_id", "project_section_id", "author_id", "responsible_id", "recurrence_id", "created_at", "last_modified", "due_at", "ended_at", "last_activity_at", "last_seen_activity_at", "last_reviewed_at", "review_triggered_at", "review_reason", "is_followed", "is_abandoned", "is_all_day", "project_position", "priority_position", "missed_repeats", "time_needed", "time_spent", "type"]
+    extra: Optional[StrictStr] = None
+    __properties: ClassVar[List[str]] = ["id", "name", "project_id", "project_section_id", "author_id", "responsible_id", "recurrence_id", "created_at", "last_modified", "due_at", "ended_at", "last_activity_at", "last_seen_activity_at", "last_reviewed_at", "review_triggered_at", "review_reason", "is_followed", "is_abandoned", "is_all_day", "project_position", "priority_position", "missed_repeats", "time_needed", "time_spent", "type", "extra"]
 
     @field_validator('id')
     def id_validate_regular_expression(cls, value):
@@ -88,6 +89,9 @@ class Task(BaseModel):
     @field_validator('author_id')
     def author_id_validate_regular_expression(cls, value):
         """Validates the regular expression"""
+        if value is None:
+            return value
+
         if not re.match(r"^[a-zA-Z0-9]{16}$", value):
             raise ValueError(r"must validate the regular expression /^[a-zA-Z0-9]{16}$/")
         return value
@@ -244,6 +248,11 @@ class Task(BaseModel):
         if self.type is None and "type" in self.model_fields_set:
             _dict['type'] = None
 
+        # set to None if extra (nullable) is None
+        # and model_fields_set contains the field
+        if self.extra is None and "extra" in self.model_fields_set:
+            _dict['extra'] = None
+
         return _dict
 
     @classmethod
@@ -280,7 +289,8 @@ class Task(BaseModel):
             "missed_repeats": obj.get("missed_repeats"),
             "time_needed": obj.get("time_needed"),
             "time_spent": obj.get("time_spent"),
-            "type": obj.get("type")
+            "type": obj.get("type"),
+            "extra": obj.get("extra")
         })
         return _obj
 

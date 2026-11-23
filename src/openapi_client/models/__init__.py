@@ -16,9 +16,14 @@
 
 # import models into model package
 from openapi_client.models.attachment import Attachment
+from openapi_client.models.business import Business
+from openapi_client.models.business_member import BusinessMember
 from openapi_client.models.color import Color
 from openapi_client.models.comment import Comment
+from openapi_client.models.get_tasks200_response_inner import GetTasks200ResponseInner
 from openapi_client.models.group_assignment import GroupAssignment
+from openapi_client.models.post_from_csv201_response import PostFromCsv201Response
+from openapi_client.models.post_task_request import PostTaskRequest
 from openapi_client.models.project import Project
 from openapi_client.models.project_access import ProjectAccess
 from openapi_client.models.project_group import ProjectGroup
@@ -27,6 +32,9 @@ from openapi_client.models.reminder import Reminder
 from openapi_client.models.tag import Tag
 from openapi_client.models.tag_assignment import TagAssignment
 from openapi_client.models.task import Task
+from openapi_client.models.task_event import TaskEvent
+from openapi_client.models.task_recurrence import TaskRecurrence
 from openapi_client.models.team import Team
 from openapi_client.models.team_member import TeamMember
+from openapi_client.models.team_member_vacations_inner import TeamMemberVacationsInner
 from openapi_client.models.user import User

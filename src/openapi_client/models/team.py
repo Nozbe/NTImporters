@@ -36,7 +36,8 @@ class Team(BaseModel):
     limits: Optional[StrictStr] = None
     plan_info: Optional[StrictStr] = None
     sidebar_position: Optional[Union[StrictFloat, StrictInt]] = None
-    __properties: ClassVar[List[str]] = ["id", "name", "is_personal", "color", "avatar_url", "limits", "plan_info", "sidebar_position"]
+    ai_credits_used: Optional[Union[StrictFloat, StrictInt]] = None
+    __properties: ClassVar[List[str]] = ["id", "name", "is_personal", "color", "avatar_url", "limits", "plan_info", "sidebar_position", "ai_credits_used"]
 
     @field_validator('id')
     def id_validate_regular_expression(cls, value):
@@ -88,11 +89,13 @@ class Team(BaseModel):
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
             "limits",
             "plan_info",
+            "ai_credits_used",
         ])
 
         _dict = self.model_dump(
@@ -134,7 +137,8 @@ class Team(BaseModel):
             "avatar_url": obj.get("avatar_url"),
             "limits": obj.get("limits"),
             "plan_info": obj.get("plan_info"),
-            "sidebar_position": obj.get("sidebar_position")
+            "sidebar_position": obj.get("sidebar_position"),
+            "ai_credits_used": obj.get("ai_credits_used")
         })
         return _obj
 

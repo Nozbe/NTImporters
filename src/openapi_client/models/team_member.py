@@ -21,6 +21,8 @@ import json
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, field_validator
 from typing import Any, ClassVar, Dict, List, Optional, Union
 from typing_extensions import Annotated
+from openapi_client.models.color import Color
+from openapi_client.models.team_member_vacations_inner import TeamMemberVacationsInner
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -37,7 +39,11 @@ class TeamMember(BaseModel):
     status: StrictStr
     is_favorite: Optional[StrictBool] = False
     sidebar_position: Optional[Union[StrictFloat, StrictInt]] = None
-    __properties: ClassVar[List[str]] = ["id", "team_id", "user_id", "alias", "description", "role", "status", "is_favorite", "sidebar_position"]
+    color: Optional[Color] = None
+    team_color: Optional[Color] = None
+    vacations: Optional[List[TeamMemberVacationsInner]] = Field(default=None, description="List of vacation ranges for the team member.")
+    contact_info: Optional[StrictStr] = None
+    __properties: ClassVar[List[str]] = ["id", "team_id", "user_id", "alias", "description", "role", "status", "is_favorite", "sidebar_position", "color", "team_color", "vacations", "contact_info"]
 
     @field_validator('id')
     def id_validate_regular_expression(cls, value):
@@ -105,9 +111,11 @@ class TeamMember(BaseModel):
           were set at model initialization. Other fields with value `None`
           are ignored.
         * OpenAPI `readOnly` fields are excluded.
+        * OpenAPI `readOnly` fields are excluded.
         """
         excluded_fields: Set[str] = set([
             "id",
+            "contact_info",
         ])
 
         _dict = self.model_dump(
@@ -115,6 +123,13 @@ class TeamMember(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of each item in vacations (list)
+        _items = []
+        if self.vacations:
+            for _item in self.vacations:
+                if _item:
+                    _items.append(_item.to_dict())
+            _dict['vacations'] = _items
         # set to None if alias (nullable) is None
         # and model_fields_set contains the field
         if self.alias is None and "alias" in self.model_fields_set:
@@ -129,6 +144,26 @@ class TeamMember(BaseModel):
         # and model_fields_set contains the field
         if self.sidebar_position is None and "sidebar_position" in self.model_fields_set:
             _dict['sidebar_position'] = None
+
+        # set to None if color (nullable) is None
+        # and model_fields_set contains the field
+        if self.color is None and "color" in self.model_fields_set:
+            _dict['color'] = None
+
+        # set to None if team_color (nullable) is None
+        # and model_fields_set contains the field
+        if self.team_color is None and "team_color" in self.model_fields_set:
+            _dict['team_color'] = None
+
+        # set to None if vacations (nullable) is None
+        # and model_fields_set contains the field
+        if self.vacations is None and "vacations" in self.model_fields_set:
+            _dict['vacations'] = None
+
+        # set to None if contact_info (nullable) is None
+        # and model_fields_set contains the field
+        if self.contact_info is None and "contact_info" in self.model_fields_set:
+            _dict['contact_info'] = None
 
         return _dict
 
@@ -150,7 +185,11 @@ class TeamMember(BaseModel):
             "role": obj.get("role"),
             "status": obj.get("status"),
             "is_favorite": obj.get("is_favorite") if obj.get("is_favorite") is not None else False,
-            "sidebar_position": obj.get("sidebar_position")
+            "sidebar_position": obj.get("sidebar_position"),
+            "color": obj.get("color"),
+            "team_color": obj.get("team_color"),
+            "vacations": [TeamMemberVacationsInner.from_dict(_item) for _item in obj["vacations"]] if obj.get("vacations") is not None else None,
+            "contact_info": obj.get("contact_info")
         })
         return _obj
 
