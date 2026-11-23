@@ -6,7 +6,10 @@ import hashlib
 from os import getenv
 import json
 import random
+import tempfile
 from collections import UserDict
+from datetime import UTC
+from pathlib import Path
 from typing import Optional, Tuple
 
 import requests
@@ -164,6 +167,25 @@ def set_unassigned_tag(nt_client, task_id: str):
                 print(exc)
 
 
+def assign_tags(nt_client, nt_task_id: str, tag_ids, skip_assigned: bool = True):
+    """Assign NT tags to task; skip_assigned: query existing ones first"""
+    tag_assignments = api.TagAssignmentsApi(nt_client)
+    assigned = (
+        {str(elt.tag_id) for elt in tag_assignments.get_tag_assignments(task_id=nt_task_id)}
+        if skip_assigned
+        else set()
+    )
+    for tag_id in dict.fromkeys(filter(None, tag_ids)):
+        if str(tag_id) in assigned:
+            continue
+        try:
+            tag_assignments.post_tag_assignment(
+                models.TagAssignment(id=id16(), tag_id=str(tag_id), task_id=nt_task_id)
+            )
+        except Exception as exc:
+            print(exc)
+
+
 def nt_limits(nt_client, team_id: str):
     """Check Nozbe limits"""
     if (team := api.TeamsApi(nt_client).get_team_by_id(team_id)) and hasattr(team, "limits"):
@@ -237,10 +259,25 @@ def trim(name: str):
 
 
 def parse_timestamp(datetime: Optional[str]):
-    """Parses date string into timestamp"""
+    """ISO date/datetime -> ms; date-only or naive as UTC"""
     if not datetime:
         return None
-    return int(isoparse(datetime).timestamp() * 1000)
+    moment = isoparse(datetime)
+    return int((moment if moment.tzinfo else moment.replace(tzinfo=UTC)).timestamp() * 1000)
+
+
+def upload_attachment(nt_client, nt_comment_id: str, url: str, name: str, headers=None):
+    """Download url, attach it to NT comment as file name"""
+    try:
+        response = requests.get(url, headers=headers or {}, timeout=120)
+        response.raise_for_status()
+        with tempfile.TemporaryDirectory() as tmp:
+            (path := Path(tmp, Path(name).name or "attachment")).write_bytes(response.content)
+            api.AttachmentsApi(nt_client).postattachment_by_id_content2(
+                nt_comment_id, file=str(path)
+            )
+    except Exception as exc:
+        print(exc)
 
 
 def post_tag(nt_client, tag_name: str, color: str):

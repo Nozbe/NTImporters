@@ -7,6 +7,7 @@ import openapi_client as nt
 from ntimporters.utils import (
     API_HOST,
     add_to_project_group,
+    assign_tags,
     check_limits,
     current_nt_member,
     exists,
@@ -19,6 +20,7 @@ from ntimporters.utils import (
     post_tag,
     set_unassigned_tag,
     trim,
+    upload_attachment,
 )
 from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
@@ -225,7 +227,6 @@ def _import_tasks(
 ):
     """Import task from Asana to Nozbe"""
     nt_api_tasks = api.TasksApi(nt_client)
-    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
     nt_api_comments = api.CommentsApi(nt_client)
     user_matches = match_nt_users(
         nt_client, [elt.get("email") for elt in asana_users(asana_client)]
@@ -285,23 +286,17 @@ def _import_tasks(
         if should_set_tag and not is_sap:
             set_unassigned_tag(nt_client, nt_task_id)
 
-        # import tag_assignments
-        for tag in task_full.get("tags") or []:
-            try:
-                nt_api_tag_assignments.post_tag_assignment(
-                    models.TagAssignment(
-                        id=id16(),
-                        tag_id=map_tag_id.get(tag["gid"]),
-                        task_id=nt_task_id,
-                    )
-                )
-            except Exception:
-                pass
+        assign_tags(
+            nt_client,
+            nt_task_id,
+            (map_tag_id.get(tag.get("gid")) for tag in task_full.get("tags") or []),
+            skip_assigned=bool(task_full.get("tags")),
+        )
 
         # import comments
 
-        def _post_comment(body, task_id):
-            nt_api_comments.post_comment(
+        def _post_comment(body, task_id) -> str | None:
+            nt_comment = nt_api_comments.post_comment(
                 models.Comment(
                     body=body or "…",
                     is_team=False,
@@ -312,6 +307,7 @@ def _import_tasks(
                     created_at=1,
                 )
             )
+            return nt_comment and str(nt_comment.id)
 
         if (task_description := task_full.get("notes", "")) and not exists(
             "comments", task_description, imported, nt_task_id
@@ -335,9 +331,18 @@ def _import_tasks(
             ):
                 _post_comment(body, nt_task_id)
 
-        # TODO import attachments
-        # for attachment in asana_client.attachments.find_by_task(task["gid"]):
-        #     pass
+        for attachment in asana.AttachmentsApi(asana_client).get_attachments_for_object(
+            task["gid"], {"opt_fields": "name,host,download_url,view_url"}
+        ):
+            name = attachment.get("name") or "attachment"
+            is_file = attachment.get("host") == "asana" and attachment.get("download_url")
+            body = name if is_file else f"{name}\n{attachment.get('view_url') or ''}".strip()
+            if (
+                not exists("comments", body, imported, nt_task_id)
+                and (nt_comment_id := _post_comment(body, nt_task_id))
+                and is_file
+            ):
+                upload_attachment(nt_client, nt_comment_id, attachment.get("download_url"), name)
 
 
 def _map_color(asana_color: Optional[str]) -> Optional[models.Color]:

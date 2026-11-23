@@ -1,7 +1,7 @@
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
-from ntimporters.utils import exists, get_imported_entities
+from ntimporters.utils import exists, get_imported_entities, parse_timestamp
 
 
 def test_imported_entities_chain():
@@ -32,3 +32,10 @@ def test_imported_entities_chain():
     assert not exists("tasks", "Call mom", imported)
     assert exists("comments", "ok", imported, "home-call")
     assert not exists("comments", "ok", imported, "work-call")
+
+
+def test_parse_timestamp_utc():
+    """Date-only and naive values are UTC, aware ones kept"""
+    assert parse_timestamp("2026-11-26") == 1795651200000
+    assert parse_timestamp("2026-11-24T14:30:00") == parse_timestamp("2026-11-24T15:30:00+01:00")
+    assert parse_timestamp(None) is None

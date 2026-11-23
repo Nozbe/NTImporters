@@ -1,7 +1,6 @@
 """Todoist -> Nozbe importer"""
 
 import itertools
-import tempfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from operator import attrgetter
@@ -16,6 +15,7 @@ from ntimporters.todoist.recurrence import to_rrule
 from ntimporters.utils import (
     API_HOST,
     add_to_project_group,
+    assign_tags,
     check_limits,
     current_nt_member,
     exists,
@@ -29,6 +29,7 @@ from ntimporters.utils import (
     post_task_recurrence,
     set_unassigned_tag,
     trim,
+    upload_attachment,
 )
 from openapi_client import api, models
 from openapi_client.exceptions import OpenApiException
@@ -261,7 +262,7 @@ def _import_task(
         set_unassigned_tag(ctx.nt_client, nt_task_id)
     try:
         _import_comments(ctx, nt_task_id, task)
-        _import_tag_assignments(ctx, nt_task_id, task.labels or [], is_new)
+        assign_tags(ctx.nt_client, nt_task_id, map(ctx.tags.get, task.labels or []), not is_new)
     except Exception as exc:
         print(exc)
 
@@ -276,24 +277,6 @@ def _import_recurrence(ctx: Ctx, nt_project_id: str, nt_task_id: str, due: Due, 
     except Exception as exc:
         print(exc)
     _post_comment(ctx, nt_task_id, f"Todoist: {due.string}")
-
-
-def _import_tag_assignments(ctx: Ctx, nt_task_id: str, labels: list[str], is_new: bool):
-    """Assign tags to task, skipping already assigned ones"""
-    tag_assignments = api.TagAssignmentsApi(ctx.nt_client)
-    assigned = (
-        set()
-        if is_new
-        else {str(elt.tag_id) for elt in tag_assignments.get_tag_assignments(task_id=nt_task_id)}
-    )
-    for label in labels:
-        if (nt_tag_id := ctx.tags.get(label)) and nt_tag_id not in assigned:
-            try:
-                tag_assignments.post_tag_assignment(
-                    models.TagAssignment(id=id16(), tag_id=nt_tag_id, task_id=nt_task_id)
-                )
-            except Exception as exc:
-                print(exc)
 
 
 def _import_tags(nt_client, todoist, team_id: str, nt_auth_token: str) -> dict[str, str]:
@@ -354,17 +337,10 @@ def _upload_attachment(ctx: Ctx, nt_comment_id: str, attachment: Attachment):
     """Copy todoist file into NT comment attachment"""
     host = urlparse(attachment.file_url).hostname or ""
     is_todoist = host == "todoist.com" or host.endswith(".todoist.com")
-    try:
-        response = requests.get(
-            attachment.file_url,
-            headers={"Authorization": f"Bearer {ctx.todoist_token}"} if is_todoist else {},
-            timeout=120,
-        )
-        response.raise_for_status()
-        with tempfile.TemporaryDirectory() as tmp:
-            (path := Path(tmp, _file_name(attachment))).write_bytes(response.content)
-            api.AttachmentsApi(ctx.nt_client).postattachment_by_id_content2(
-                nt_comment_id, file=str(path)
-            )
-    except Exception as exc:
-        print(exc)
+    upload_attachment(
+        ctx.nt_client,
+        nt_comment_id,
+        attachment.file_url,
+        _file_name(attachment),
+        {"Authorization": f"Bearer {ctx.todoist_token}"} if is_todoist else None,
+    )
