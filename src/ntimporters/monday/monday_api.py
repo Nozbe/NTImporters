@@ -11,6 +11,7 @@ class MondayClient:
 
     api_path = "https://api.monday.com/v2"
     limit = 300
+    page_limit = 500
 
     def __init__(self, app_key):
         self.headers = {"Authorization": app_key}
@@ -61,25 +62,36 @@ class MondayClient:
                     pass
         return task, counter, due_at
 
+    def _items(self, project_id: str) -> list[dict]:
+        """All board items, following items_page cursor"""
+        page_args = f"limit:{self.page_limit}"
+        fields = "cursor items { id name group {id} column_values {text type value} }"
+        page = (
+            self._req(
+                f"boards(state:all order_by:created_at ids:{project_id}) "
+                f"{{ items_page({page_args}) {{ {fields} }} }}"
+            )
+            .get("data", {})
+            .get("boards")
+            or [{}]
+        )[0].get("items_page") or {}
+        items = page.get("items") or []
+        while cursor := page.get("cursor"):
+            page = (
+                self._req(f'next_items_page({page_args} cursor:"{cursor}") {{ {fields} }}')
+                .get("data", {})
+                .get("next_items_page")
+                or {}
+            )
+            items += page.get("items") or []
+        return items
+
     def tasks(self, project_id: str) -> list:
         """Get Monday items (NT tasks)"""
-        query = f"""
-        boards(state:all limit:{self.limit} order_by:created_at ids:{project_id}) {{
-            items_page {{
-                items {{ id name group {{id}} column_values {{text type value}} }}
-            }}
-        }}
-        """
         # ASSUMPTION: if only one date-type column then it is due_at
         tasks = []
         delta = 0
-        for i, task in enumerate(
-            self._req(query)
-            .get("data", {})
-            .get("boards", [{}])[0]
-            .get("items_page")
-            .get("items", [])
-        ):
+        for i, task in enumerate(self._items(project_id)):
             assigned = []
             for col in task.get("column_values"):
                 if col and col.get("type") == "multiple-person" and col.get("value"):

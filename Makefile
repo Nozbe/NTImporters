@@ -4,4 +4,6 @@ client:
 client_dev:
 	openapi-generator-cli  generate -i http://localhost:8888/v1/api/openapi.yaml -g python -o client_dev
 lint:
-	ruff check --output-format=github .
+	uv run ruff check --output-format=github .
+test:
+	uv run pytest

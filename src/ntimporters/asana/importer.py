@@ -160,6 +160,7 @@ def _import_data(
                         "project_sections",
                         name := trim(section_full.get("name", "")),
                         imported,
+                        nt_project_id,
                     ) or nt_api_sections.post_project_section(
                         models.ProjectSection(
                             id=id16(),
@@ -258,7 +259,7 @@ def _import_tasks(
             continue
 
         nt_task = exists(
-            "tasks", name := trim(task_full.get("name", "")), imported
+            "tasks", name := trim(task_full.get("name", "")), imported, nt_project_id
         ) or nt_api_tasks.post_task(
             models.Task(
                 id=id16(),
@@ -313,7 +314,7 @@ def _import_tasks(
             )
 
         if (task_description := task_full.get("notes", "")) and not exists(
-            "comments", task_description, imported
+            "comments", task_description, imported, nt_task_id
         ):
             _post_comment(task_description, nt_task_id)
         checklist = []
@@ -325,12 +326,14 @@ def _import_tasks(
 
         if checklist:
             body = "\n".join(checklist)
-            if not exists("comments", body, imported):
+            if not exists("comments", body, imported, nt_task_id):
                 _post_comment(body, nt_task_id)
 
         for story in asana.StoriesApi(asana_client).get_stories_for_task(task["gid"], {}):
-            if (body := story.get("type")) == "comment" and not exists("comments", body, imported):
-                _post_comment(story.get("text"), nt_task_id)
+            if story.get("type") == "comment" and not exists(
+                "comments", body := story.get("text") or "…", imported, nt_task_id
+            ):
+                _post_comment(body, nt_task_id)
 
         # TODO import attachments
         # for attachment in asana_client.attachments.find_by_task(task["gid"]):

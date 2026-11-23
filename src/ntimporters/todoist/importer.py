@@ -1,38 +1,39 @@
 """Todoist -> Nozbe importer"""
 
-import functools
+import itertools
+import tempfile
 from dataclasses import dataclass
-from typing import Optional
+from datetime import UTC, date, datetime, time
+from operator import attrgetter
+from pathlib import Path
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import openapi_client as nt
-from dateutil.parser import isoparse
+import requests
 from ntimporters.rate_limiting import RLProxy
+from ntimporters.todoist.recurrence import to_rrule
 from ntimporters.utils import (
+    API_HOST,
     add_to_project_group,
     check_limits,
-    API_HOST,
-    get_imported_entities,
     current_nt_member,
     exists,
+    get_imported_entities,
     get_single_tasks_project_id,
     id16,
     match_nt_users,
-    nt_members_by_email,
     nt_open_projects_len,
+    nt_time_zone,
     post_tag,
+    post_task_recurrence,
     set_unassigned_tag,
     trim,
 )
-from openapi_client import models, api
+from openapi_client import api, models
 from openapi_client.exceptions import OpenApiException
 from todoist_api_python.api import TodoistAPI
-
-import itertools
-
-
-def unpack(paginator):
-    return list(itertools.chain.from_iterable(paginator))
-
+from todoist_api_python.models import Attachment, Due, Project, Task
 
 SPEC = {
     "code": "todoist",  # codename / ID of importer
@@ -43,8 +44,28 @@ SPEC = {
 IMPORT_NAME = "Imported from Todoist"
 
 
+def unpack(paginator) -> list:
+    """Flatten Todoist paginator"""
+    return list(itertools.chain.from_iterable(paginator))
+
+
+@dataclass(frozen=True)
+class Ctx:
+    """Import-wide state"""
+
+    nt_client: nt.ApiClient
+    todoist: RLProxy
+    todoist_token: str
+    team_id: str
+    author_id: str
+    single_tasks_id: str
+    time_zone: str
+    imported: dict
+    tags: dict
+
+
 # main method called by Nozbe app
-def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Exception]:
+def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception | None:
     """Perform import from todoist to Nozbe"""
     if not nt_auth_token:
         return "Missing 'nt_auth_token'"
@@ -61,6 +82,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
                 )
             ),
             RLProxy(TodoistAPI(auth_token)),
+            auth_token,
             team_id,
             nt_auth_token,
         )
@@ -69,308 +91,260 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
     return None
 
 
-def _import_data(nt_client: nt.ApiClient, todoist_client, team_id: str, nt_auth_token: str):
+def _import_data(nt_client, todoist, todoist_token: str, team_id: str, nt_auth_token: str):
     """Import everything from todoist to Nozbe"""
-    nt_project_api = api.ProjectsApi(nt_client)
-    single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
-    imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
-    author_id = current_nt_member(nt_client, team_id)
-
-    def _import_project(project: dict):
-        """Import todoist project"""
-        if project.name != "Inbox":
-            project_model = models.Project(
-                name=(name := trim(project.name)),
-                is_template=False,
-                team_id=team_id,
-                author_id=author_id,
-                created_at=1,
-                last_event_at=1,
-                is_favorite=project.is_favorite,
-                sidebar_position=1.0,
-                is_open=True,
-                extra="",
-            )
-            try:
-                nt_project = (
-                    exists("projects", name, imported)
-                    or nt_project_api.post_project(project_model)
-                    or {}
-                )
-            except Exception as e:
-                print(e)
-                return
-
-            if not (nt_project_id := nt_project and str(nt_project.id)):
-                return
-            add_to_project_group(nt_client, team_id, nt_project_id, "Imported from Todoist")
-        else:
-            nt_project_id = single_tasks_id
-
-        _import_project_sections(
-            nt_client,
-            todoist_client,
-            nt_project_id,
-            project,
-            nt_members_by_email(nt_client, team_id),
-            team_id,
-            nt_auth_token,
-            is_sap=nt_project_id == single_tasks_id,
-            imported=imported,
-        )
-
-    todoist_projects = unpack(todoist_client.get_projects())
+    projects = unpack(todoist.get_projects())
     check_limits(
         nt_auth_token,
         team_id,
         nt_client,
         "projects_open",
-        len(todoist_projects) + nt_open_projects_len(nt_client, team_id),
+        len(projects) + nt_open_projects_len(nt_client, team_id),
     )
-    _import_members(nt_client, todoist_client, todoist_projects, team_id, nt_auth_token)
-    for project in todoist_projects:
-        _import_project(project)
-
-
-def _import_members(
-    nt_client, todoist_client, todoist_projects: list, team_id: str, nt_auth_token: str
-):
-    """Import members into Nozbe"""
-    return  # TODO
-    # nt_team_members_api = api.TeamMembersApi(nt_client)
-    # active_nt_members =sum([True for elt in nt_team_members_api.get_team_members()
-    # if elt.get("status") == "active"])
-    # uniq_emails = set()
-    # for project in todoist_projects:
-    #     uniq_emails.update(todoist_members(todoist_client, project.id).values())
-    # uniq_emails -= set(nt_members_by_email(nt_client)[0])
-    # print(f"would import {uniq_emails=}")
-    # TODO
-    # check_limits(
-    # nt_auth_token,
-    # team_id,
-    # nt_client,
-    # "team_members", active_nt_members + len(uniq_emails))
-    # for email in uniq_emails:
-    #     if nt_user := api.UsersApi(nt_client).post_user(user_model):
-    #         user_id = nt_user.get("id")
-    #         nt_team_members_api.post_team_member(team_member_model)
-
-
-# pylint: disable=too-many-arguments
-def _import_project_sections(
-    nt_client,
-    todoist_client,
-    nt_project_id: str,
-    project: dict,
-    nt_members: tuple[dict, str],
-    team_id: str,
-    nt_auth_token: str,
-    is_sap: bool = False,
-    imported=None,
-):
-    """Import todoist lists as project sections"""
-    nt_api_sections = api.ProjectSectionsApi(nt_client)
-
-    # import project sections
-    mapping = {}
-    if project.name != "Inbox":
-        for section in unpack(todoist_client.get_sections(project_id=project.id)):
-            try:
-                if nt_section := exists(
-                    "project_sections", name := trim(section.name), imported
-                ) or nt_api_sections.post_project_section(
-                    models.ProjectSection(
-                        id=id16(),
-                        project_id=nt_project_id,
-                        name=name,
-                        created_at=1,
-                        position=float(section.order),
-                    )
-                ):
-                    mapping[section.id] = str(nt_section.id)
-            except OpenApiException as e:
-                print(e)
-    _import_tasks(
-        nt_client,
-        todoist_client,
-        mapping,
-        nt_members,
-        nt_project_id,
-        project.id,
-        team_id,
-        nt_auth_token,
-        is_sap,
-        imported=imported,
+    ctx = Ctx(
+        nt_client=nt_client,
+        todoist=todoist,
+        todoist_token=todoist_token,
+        team_id=team_id,
+        author_id=current_nt_member(nt_client, team_id),
+        single_tasks_id=get_single_tasks_project_id(nt_client, team_id),
+        time_zone=nt_time_zone(nt_client),
+        imported=get_imported_entities(nt_client, team_id, IMPORT_NAME),
+        tags=_import_tags(nt_client, todoist, team_id, nt_auth_token),
     )
+    for project in projects:
+        _import_project(ctx, project)
 
 
-def _import_tasks(
-    nt_client,
-    todoist_client,
-    sections_mapping: dict,
-    nt_members: dict,
-    nt_project_id: str,
-    to_project_id: str,
-    team_id,
-    nt_auth_token,
-    is_sap: bool = False,
-    imported=None,
-):
-    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
-    nt_api_tasks = api.TasksApi(nt_client)
-    tags_mapping = _import_tags(nt_client, todoist_client, team_id, nt_auth_token)
-    author_id = nt_members[1]
-
-    def _parse_timestamp(todoist_date):
-        """Parses todoist timestamp into NT timestamp format"""
-        if isinstance(todoist_date, str):
-            return int(isoparse(todoist_date).timestamp() * 1000), len(todoist_date) == 10
-
-        if not todoist_date or not any((todoist_date.get("date"), todoist_date.get("datetime"))):
-            return None, False
-        return (
-            int(
-                isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp() * 1000
-            ),
-            todoist_date.get("datetime", None) is None,
-        )
-
-    def _get_responsible_id(task: dict):
-        """Get NT responsible_id given todoist assignee id"""
-        should_set_tag, responsible_id = False, None
-        if task.get("assignee_id"):
-            t_members = todoist_members(todoist_client, task.get("project_id"))
-            user_matches = match_nt_users(nt_client, t_members.values())
-            responsible_id = user_matches.get(t_members.get(task.get("assignee_id")))
-        if is_sap and responsible_id and responsible_id != author_id:
-            responsible_id = author_id
-        if not responsible_id and task.get("due"):
-            should_set_tag = True
-            responsible_id = author_id
-
-        return should_set_tag, responsible_id
-
-    for task in [
-        task.to_dict() for task in unpack(todoist_client.get_tasks(project_id=to_project_id))
-    ]:
-        due_at, is_all_day = _parse_timestamp(task.get("due"))
-        should_set_tag, responsible_id = _get_responsible_id(task)
-        if nt_task := exists(
-            "tasks", name := trim(task.get("content", "")), imported
-        ) or nt_api_tasks.post_task(
-            models.Task(
-                id=id16(),
-                is_followed=False,
-                is_abandoned=False,
-                name=name,
-                project_id=nt_project_id,
-                author_id=author_id,
-                missed_repeats=0,
-                created_at=1,
-                extra="",
-                last_activity_at=1,
-                project_section_id=sections_mapping.get(task.get("section_id")),
-                project_position=float(task.get("order") or 1),
-                due_at=due_at,
-                is_all_day=is_all_day,
-                responsible_id=responsible_id,
-                ended_at=_parse_timestamp(task.get("completed_at"))[0],
-            )
-        ):
-            if not is_sap and should_set_tag:
-                set_unassigned_tag(nt_client, nt_task.id)
-            try:
-                _import_comments(
-                    nt_client,
-                    todoist_client,
-                    str(nt_task.id),
-                    task,
-                    imported=imported,
-                    author_id=author_id,
-                )
-                _import_tags_assignments(
-                    nt_api_tag_assignments,
-                    str(nt_task.id),
-                    tags_mapping,
-                    task.get("labels") or [],
-                )
-            except Exception as e:
-                print(e)
-
-
-# pylint: enable=too-many-arguments
-@functools.cache
-def todoist_members(todoist_client, project_id: str):
-    """Get todoist collaborators per project"""
-    return {
-        elt.id: elt.email for elt in unpack(todoist_client.get_collaborators(project_id=project_id))
-    }
-
-
-def _import_tags_assignments(
-    nt_api_tag_assignments, nt_task_id: str, tags_mapping: dict, task_tags: list
-):
-    """Assign tags to task"""
-    for tag_name in task_tags:
-        if nt_tag_id := tags_mapping.get(tag_name):
-            try:
-                nt_api_tag_assignments.post_tag_assignment(
-                    models.TagAssignment(
-                        id=id16(),
-                        tag_id=nt_tag_id,
-                        task_id=nt_task_id,
-                    )
-                )
-            except Exception as e:
-                print(e)
-
-
-def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) -> dict:
-    """Import todoist tags and return name -> NT tag id mapping"""
-    nt_api_tags = api.TagsApi(nt_client)
-    nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
-    check_limits(
-        nt_auth_token,
-        team_id,
-        nt_client,
-        "tags",
-        len(todoist_tags := unpack(todoist_client.get_labels())) + len(nt_tags),
-    )
-    for tag in todoist_tags:
-        tag_name = str(tag.name)
-        nt_tags[tag_name] = nt_tags.get(tag_name) or post_tag(nt_client, tag_name, str(tag.color))
-    return nt_tags
-
-
-@dataclass
-class Comment:
-    """Fake Todoist comment class"""
-
-    content: str
-
-
-def _import_comments(
-    nt_client, todoist_client, nt_task_id: str, task: dict, imported=None, author_id=None
-):
-    """Import task-related comments"""
-    nt_api_comments = api.CommentsApi(nt_client)
-
-    comments = sorted(
-        unpack(todoist_client.get_comments(task_id=task.get("id"))), key=lambda elt: elt.posted_at
-    )
-    if task.get("description"):
-        comments.insert(0, Comment(content=task.get("description")))
-    for comment in comments:
-        if not exists("comments", body := str(comment.content or "…"), imported):
-            nt_api_comments.post_comment(
-                models.Comment(
-                    is_team=False,
-                    is_pinned=False,
-                    body=body,
-                    task_id=nt_task_id,
-                    author_id=author_id or id16(),
+def _import_project(ctx: Ctx, project: Project):
+    """Import todoist project with its sections and tasks"""
+    if project.is_inbox_project:
+        nt_project_id = ctx.single_tasks_id
+    else:
+        try:
+            nt_project = exists(
+                "projects", name := trim(project.name), ctx.imported
+            ) or api.ProjectsApi(ctx.nt_client).post_project(
+                models.Project(
+                    name=name,
+                    is_template=False,
+                    team_id=ctx.team_id,
+                    author_id=ctx.author_id,
                     created_at=1,
+                    last_event_at=1,
+                    is_favorite=project.is_favorite,
+                    sidebar_position=1.0,
+                    is_open=True,
                     extra="",
                 )
             )
+        except Exception as exc:
+            print(exc)
+            return
+        if not (nt_project_id := nt_project and str(nt_project.id)):
+            return
+        add_to_project_group(ctx.nt_client, ctx.team_id, nt_project_id, IMPORT_NAME)
+
+    is_sap = nt_project_id == ctx.single_tasks_id
+    sections = {} if is_sap else _import_sections(ctx, nt_project_id, project.id)
+    assignees = _assignees(ctx, project)
+    for task in unpack(ctx.todoist.get_tasks(project_id=project.id)):
+        _import_task(ctx, task, nt_project_id, sections, assignees, is_sap)
+
+
+def _import_sections(ctx: Ctx, nt_project_id: str, project_id: str) -> dict[str, str]:
+    """Import todoist sections; return todoist -> NT section id"""
+    mapping = {}
+    for section in unpack(ctx.todoist.get_sections(project_id=project_id)):
+        try:
+            if nt_section := exists(
+                "project_sections", name := trim(section.name), ctx.imported, nt_project_id
+            ) or api.ProjectSectionsApi(ctx.nt_client).post_project_section(
+                models.ProjectSection(
+                    id=id16(),
+                    project_id=nt_project_id,
+                    name=name,
+                    created_at=1,
+                    position=float(section.order),
+                )
+            ):
+                mapping[section.id] = str(nt_section.id)
+        except OpenApiException as exc:
+            print(exc)
+    return mapping
+
+
+def _assignees(ctx: Ctx, project: Project) -> dict[str, str]:
+    """Todoist collaborator id -> NT member id"""
+    if not project.is_shared:
+        return {}
+    emails = {
+        elt.id: elt.email for elt in unpack(ctx.todoist.get_collaborators(project_id=project.id))
+    }
+    matches = match_nt_users(ctx.nt_client, emails.values())
+    return {uid: member for uid, email in emails.items() if (member := matches.get(email.lower()))}
+
+
+def parse_due(due: Due | None, time_zone: str) -> tuple[int | None, bool]:
+    """Due -> (due_at ms, is_all_day); date: UTC midnight, floating datetime: in due/user zone"""
+    match due and due.date:
+        case datetime() as moment:
+            if not moment.tzinfo:
+                moment = moment.replace(tzinfo=_zone(due.timezone or time_zone))
+            return int(moment.timestamp() * 1000), False
+        case date() as day:
+            return int(datetime.combine(day, time(), UTC).timestamp() * 1000), True
+    return None, False
+
+
+def _zone(name: str) -> ZoneInfo:
+    """ZoneInfo by name, UTC if unknown"""
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
+
+
+def _import_task(
+    ctx: Ctx, task: Task, nt_project_id: str, sections: dict, assignees: dict, is_sap: bool
+):
+    """Import todoist task with comments, tags and recurrence"""
+    due_at, is_all_day = parse_due(task.due, ctx.time_zone)
+    responsible_id = assignees.get(task.assignee_id)
+    if is_sap and responsible_id:
+        responsible_id = ctx.author_id
+    if missing_responsible := not responsible_id and due_at is not None:
+        responsible_id = ctx.author_id
+
+    if nt_task := exists("tasks", name := trim(task.content), ctx.imported, nt_project_id):
+        nt_task_id = str(nt_task.id)
+    elif nt_task := api.TasksApi(ctx.nt_client).post_task(
+        models.Task(
+            id=id16(),
+            is_followed=False,
+            is_abandoned=False,
+            name=name,
+            project_id=nt_project_id,
+            author_id=ctx.author_id,
+            missed_repeats=0,
+            created_at=1,
+            extra="",
+            last_activity_at=1,
+            project_section_id=sections.get(task.section_id),
+            project_position=float(task.order or 1),
+            due_at=due_at,
+            is_all_day=is_all_day,
+            responsible_id=responsible_id,
+        )
+    ):
+        nt_task_id = str(nt_task.id)
+        if due_at is not None and task.due.is_recurring:
+            _import_recurrence(ctx, nt_project_id, nt_task_id, task.due)
+    else:
+        return
+
+    if not is_sap and missing_responsible:
+        set_unassigned_tag(ctx.nt_client, nt_task_id)
+    try:
+        _import_comments(ctx, nt_task_id, task)
+        _import_tag_assignments(ctx, nt_task_id, task.labels or [])
+    except Exception as exc:
+        print(exc)
+
+
+def _import_recurrence(ctx: Ctx, nt_project_id: str, nt_task_id: str, due: Due):
+    """Set task recurrence; unparsed rule goes to a comment"""
+    try:
+        if (pattern := to_rrule(due.string)) and post_task_recurrence(
+            ctx.nt_client, nt_project_id, nt_task_id, pattern
+        ):
+            return
+    except Exception as exc:
+        print(exc)
+    _post_comment(ctx, nt_task_id, f"Todoist: {due.string}")
+
+
+def _import_tag_assignments(ctx: Ctx, nt_task_id: str, labels: list[str]):
+    """Assign tags to task"""
+    for label in labels:
+        if nt_tag_id := ctx.tags.get(label):
+            try:
+                api.TagAssignmentsApi(ctx.nt_client).post_tag_assignment(
+                    models.TagAssignment(id=id16(), tag_id=nt_tag_id, task_id=nt_task_id)
+                )
+            except Exception as exc:
+                print(exc)
+
+
+def _import_tags(nt_client, todoist, team_id: str, nt_auth_token: str) -> dict[str, str]:
+    """Import todoist labels; return name -> NT tag id"""
+    nt_tags = {
+        str(elt.name): str(elt.id) for elt in api.TagsApi(nt_client).get_tags(fields="id,name")
+    }
+    labels = unpack(todoist.get_labels())
+    check_limits(nt_auth_token, team_id, nt_client, "tags", len(labels) + len(nt_tags))
+    for label in labels:
+        name = str(label.name)
+        nt_tags[name] = nt_tags.get(name) or post_tag(nt_client, name, str(label.color))
+    return nt_tags
+
+
+def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
+    """Import description and comments with attachments"""
+    if task.description:
+        _post_comment(ctx, nt_task_id, task.description)
+    for comment in sorted(
+        unpack(ctx.todoist.get_comments(task_id=task.id)), key=attrgetter("posted_at")
+    ):
+        body, attachment = comment.content, comment.attachment
+        if attachment and not attachment.file_url and attachment.url not in (None, *body.split()):
+            body = f"{body}\n{attachment.url}".strip()
+        if (
+            (nt_comment_id := _post_comment(ctx, nt_task_id, body or _file_name(attachment)))
+            and attachment
+            and attachment.file_url
+        ):
+            _upload_attachment(ctx, nt_comment_id, attachment)
+
+
+def _post_comment(ctx: Ctx, nt_task_id: str, body: str | None) -> str | None:
+    """Post comment unless imported before; return its id"""
+    if exists("comments", body := str(body or "…"), ctx.imported, nt_task_id):
+        return None
+    nt_comment = api.CommentsApi(ctx.nt_client).post_comment(
+        models.Comment(
+            is_team=False,
+            is_pinned=False,
+            body=body,
+            task_id=nt_task_id,
+            author_id=ctx.author_id,
+            created_at=1,
+            extra="",
+        )
+    )
+    return nt_comment and str(nt_comment.id)
+
+
+def _file_name(attachment: Attachment | None) -> str | None:
+    """Safe attachment file name"""
+    return attachment and Path(attachment.file_name or attachment.title or "attachment").name
+
+
+def _upload_attachment(ctx: Ctx, nt_comment_id: str, attachment: Attachment):
+    """Copy todoist file into NT comment attachment"""
+    host = urlparse(attachment.file_url).hostname or ""
+    is_todoist = host == "todoist.com" or host.endswith(".todoist.com")
+    try:
+        response = requests.get(
+            attachment.file_url,
+            headers={"Authorization": f"Bearer {ctx.todoist_token}"} if is_todoist else {},
+            timeout=120,
+        )
+        response.raise_for_status()
+        with tempfile.TemporaryDirectory() as tmp:
+            (path := Path(tmp, _file_name(attachment))).write_bytes(response.content)
+            api.AttachmentsApi(ctx.nt_client).postattachment_by_id_content2(
+                nt_comment_id, file=str(path)
+            )
+    except Exception as exc:
+        print(exc)

@@ -1,8 +1,39 @@
-[build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
+[project]
+name = "ntimporters"
+version = "0.1"
+description = "Set of migrators to import data from 3rd party apps to Nozbe"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "jsamelak", email = "jarek@nozbe.com" }]
+requires-python = ">=3.12"
+dependencies = [
+    "asana>=5.0.6",
+    "pydantic>=2",
+    "python-dateutil>=2.5.3",
+    "requests",
+    "todoist-api-python>=4.0.1,<5",
+    "typing-extensions>=4.7.1",
+    "urllib3>=1.25.3",
 ]
+
+[project.urls]
+Repository = "https://github.com/Nozbe/NTImporters"
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.ruff]
 exclude = ["src/openapi_client/**"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

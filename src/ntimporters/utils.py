@@ -74,12 +74,11 @@ def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
     return str(st_groups[0].id) if st_groups and st_groups[0] else None
 
 
-def exists(entity_type: str, name: str, imported_entities: dict[str, tuple[str, str]]) -> dict:
-    """Check if entity already exists and return its id"""
-
-    if imported_entities:
-        if (records := imported_entities.get(entity_type)) and (record := records.get(name)):
-            return record
+def exists(entity_type: str, name: str, imported_entities: dict, parent: str | None = None) -> dict:
+    """Already imported entity by name (under parent id, if given), else Dict with id None"""
+    key = name if parent is None else (str(parent), name)
+    if imported_entities and (record := (imported_entities.get(entity_type) or {}).get(key)):
+        return record
     return Dict({"id": None})
 
 
@@ -96,37 +95,34 @@ class Dict(UserDict):
         return self.get("id") is not None
 
 
-def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
-    """Get already imported records"""
-    already_imported = []
+def get_imported_entities(nt_client, team_id, group_name) -> dict[str, dict]:
+    """Records of group's projects; sections, tasks keyed (project_id, name), comments (task_id, body)"""
+    projects, sections, tasks, comments, tags = {}, {}, {}, {}, {}
     if group_id := get_group_id(nt_client, team_id, group_name):
         for pgroup in api.GroupAssignmentsApi(nt_client).get_group_assignments(
             group_id=group_id, group_type="project"
         ):
             project = api.ProjectsApi(nt_client).get_project_by_id(str(pgroup.object_id))
-            already_imported.append(("project", project))
+            projects[str(project.name)] = Dict({"id": project.id})
+            project_id = str(project.id)
             for section in api.ProjectSectionsApi(nt_client).get_project_sections(
-                project_id=str(project.id)
+                project_id=project_id
             ):
-                already_imported.append(("project_section", section))
-            for task in api.TasksApi(nt_client).get_tasks(project_id=str(project.id)):
-                already_imported.append(("task", task))
-                for comment in api.CommentsApi(nt_client).get_comments(task_id=str(task.id)):
-                    already_imported.append(("comment", comment))
-                for tag in api.TagsApi(nt_client).get_tags(task_id=str(task.id)):
-                    already_imported.append(("tag", tag))
-    entities = {
-        "comments": {
-            str(elt[1].body): Dict({"id": elt[1].id})
-            for elt in already_imported
-            if elt[0] == "comment"
-        }
+                sections[(project_id, str(section.name))] = Dict({"id": section.id})
+            for task in api.TasksApi(nt_client).get_tasks(project_id=project_id):
+                tasks[(project_id, str(task.name))] = Dict({"id": task.id})
+                task_id = str(task.id)
+                for comment in api.CommentsApi(nt_client).get_comments(task_id=task_id):
+                    comments[(task_id, str(comment.body))] = Dict({"id": comment.id})
+                for tag in api.TagsApi(nt_client).get_tags(task_id=task_id):
+                    tags[str(tag.name)] = Dict({"id": tag.id})
+    return {
+        "projects": projects,
+        "project_sections": sections,
+        "tasks": tasks,
+        "comments": comments,
+        "tags": tags,
     }
-    for rtype in ("task", "tag", "project", "project_section"):
-        entities[f"{rtype}s"] = {
-            str(elt[1].name): Dict({"id": elt[1].id}) for elt in already_imported if elt[0] == rtype
-        }
-    return entities
 
 
 def add_to_project_group(nt_client, team_id: str, project_id: str, group_name: str):
@@ -257,6 +253,39 @@ def post_tag(nt_client, tag_name: str, color: str):
     except Exception as exc:
         print(exc)
     return None
+
+
+def post_task_recurrence(nt_client, project_id: str, task_id: str, pattern: str) -> str | None:
+    """Create recurrence (RRULE pattern) of an existing task with due_at; return its id"""
+    response = nt_client.call_api(
+        *nt_client.param_serialize(
+            "POST",
+            "/task_recurrences",
+            header_params={"Accept": "application/json", "Content-Type": "application/json"},
+            body={"project_id": project_id, "current_task_id": task_id, "pattern": pattern},
+            auth_settings=["ApiKeyAuth"],
+        )
+    )
+    response.read()
+    if response.status not in (200, 201) or not (
+        recurrence_id := json.loads(response.data).get("id")
+    ):
+        return None
+    api.TasksApi(nt_client).put_task_by_id(task_id, {"recurrence_id": recurrence_id})
+    return recurrence_id
+
+
+def nt_time_zone(nt_client) -> str:
+    """Current NT user's time zone, UTC if unset"""
+    current_user_id = nt_client.configuration.username
+    return next(
+        (
+            str(user.time_zone)
+            for user in api.UsersApi(nt_client).get_users()
+            if str(user.id) == current_user_id and getattr(user, "time_zone", None)
+        ),
+        "UTC",
+    )
 
 
 def match_nt_users(nt_client, emails: list) -> dict:

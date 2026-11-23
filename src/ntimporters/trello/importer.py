@@ -145,7 +145,9 @@ def _import_project_sections(
     for j, section in enumerate(trello_sections):
         nt_section_id = None
         try:
-            nt_section = exists("project_sections", name := trim(section.get("name", "")), imported)
+            nt_section = exists(
+                "project_sections", name := trim(section.get("name", "")), imported, nt_project_id
+            )
             if nt_section := nt_section or nt_api_sections.post_project_section(
                 models.ProjectSection(
                     id=id16(),
@@ -177,7 +179,7 @@ def _import_project_sections(
         for i, task in enumerate(trello_client.tasks(section.get("id"))):
             responsible_id = _get_responsible_id(task) or nt_member_id if task.get("due") else None
 
-            nt_task = exists("tasks", name := trim(task.get("name", "")), imported)
+            nt_task = exists("tasks", name := trim(task.get("name", "")), imported, nt_project_id)
             if nt_task := nt_task or nt_api_tasks.post_task(
                 models.Task(
                     name=name,
@@ -278,7 +280,7 @@ def _import_comments(
         trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
     )
     for comment in comments:
-        if not exists("comments", body := comment.get("text") or "…", imported):
+        if not exists("comments", body := comment.get("text") or "…", imported, nt_task_id):
             nt_api_comments.post_comment(
                 models.Comment(
                     body=body,

@@ -143,7 +143,7 @@ def _import_project_sections(
     for section in monday_sections:
         try:
             if nt_section := exists(
-                "project_sections", name := trim(section.get("title", "")), imported
+                "project_sections", name := trim(section.get("title", "")), imported, nt_project_id
             ) or nt_api_sections.post_project_section(
                 models.ProjectSection(
                     id=id16(),
@@ -190,7 +190,7 @@ def _import_tasks(
                     break
 
         if nt_task := exists(
-            "tasks", name := trim(task.get("name", "")), imported
+            "tasks", name := trim(task.get("name", "")), imported, nt_project_id
         ) or nt_api_tasks.post_task(
             models.Task(
                 is_followed=False,
@@ -234,7 +234,9 @@ def _import_comments(
         monday_client.comments(tr_task_id),
         key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
     ):
-        if not exists("comments", body := format_body(comment.get("text_body") or "…"), imported):
+        if not exists(
+            "comments", body := format_body(comment.get("text_body") or "…"), imported, nt_task_id
+        ):
             nt_api_comments.post_comment(
                 models.Comment(
                     is_pinned=False,
