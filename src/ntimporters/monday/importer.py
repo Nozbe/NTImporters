@@ -4,7 +4,6 @@ import re
 from typing import Optional
 
 import openapi_client as nt
-from dateutil.parser import isoparse
 from ntimporters.monday.monday_api import MondayClient
 from ntimporters.utils import (
     API_HOST,
@@ -16,6 +15,7 @@ from ntimporters.utils import (
     id16,
     match_nt_users,
     nt_open_projects_len,
+    parse_timestamp,
     post_comment,
     set_unassigned_tag,
     trim,
@@ -232,7 +232,7 @@ def _import_comments(
 ):
     """Import task-related comments"""
     for comment in sorted(
-        monday_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("created_at"))
+        monday_client.comments(tr_task_id), key=lambda elt: parse_timestamp(elt.get("created_at")) or 0
     ):
         body = format_body(comment.get("text_body") or "…")
         post_comment(nt_client, nt_task_id, body, author_id, imported)

@@ -3,7 +3,6 @@
 from typing import Optional
 
 import openapi_client as nt
-from dateutil.parser import isoparse
 from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
     API_HOST,
@@ -115,11 +114,7 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
         len(trello_projects := trello_client.projects()) + nt_open_projects_len(nt_client, team_id),
     )
     for project in trello_projects:
-        try:
-            _import_project(project, curr_member)
-        except Exception as error:
-            return error
-    return None
+        _import_project(project, curr_member)
 
 
 # pylint: disable=too-many-arguments
@@ -259,7 +254,7 @@ def _import_comments(
     if desc := task.get("desc"):
         post_comment(nt_client, nt_task_id, desc, author_id, imported)
     for comment in sorted(
-        trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date"))
+        trello_client.comments(tr_task_id), key=lambda elt: parse_timestamp(elt.get("date")) or 0
     ):
         post_comment(nt_client, nt_task_id, comment.get("text"), author_id, imported)
     for attachment in trello_client.attachments(tr_task_id):

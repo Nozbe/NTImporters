@@ -1,5 +1,7 @@
 from datetime import UTC, date, datetime
 
+from dateutil.rrule import rrulestr
+
 import pytest
 from ntimporters.todoist.importer import parse_due
 from ntimporters.todoist.recurrence import to_rrule
@@ -39,10 +41,26 @@ def test_parse_due_empty():
         ("co 2 tygodnie", "FREQ=WEEKLY;INTERVAL=2"),
         ("w każdą środę", "FREQ=WEEKLY;BYDAY=WE"),
         ("w dni robocze", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"),
-        ("every jan 27", None),
+        ("every 2 weeks on monday", "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"),
+        ("every month on the 5th", "FREQ=MONTHLY;BYMONTHDAY=5"),
+        ("every quarter", "FREQ=MONTHLY;INTERVAL=3"),
+        ("every morning", "FREQ=DAILY"),
+        ("every jan 27", "FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=27"),
+        ("co 27 stycznia", "FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=27"),
+        # unbounded rule would be wrong: comment instead
+        ("every day starting jan 1 until feb 28", None),
+        ("every day for 3 weeks", None),
+        ("every monday morning", None),
         ("every 2 hours", None),
         (None, None),
     ],
 )
 def test_to_rrule(text, rrule):
     assert to_rrule(text) == rrule
+    if rrule:
+        assert rrulestr(rrule, dtstart=datetime(2026, 1, 1))[1]
+
+
+def test_to_rrule_other_language():
+    assert to_rrule("jeden Montag", "de") is None
+    assert to_rrule("every monday", "de") is None

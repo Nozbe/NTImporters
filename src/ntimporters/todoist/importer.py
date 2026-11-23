@@ -276,7 +276,7 @@ def _import_task(
 def _import_recurrence(ctx: Ctx, nt_project_id: str, nt_task_id: str, due: Due, is_all_day: bool):
     """Set task recurrence; unparsed rule goes to a comment"""
     try:
-        if (pattern := to_rrule(due.string)) and post_task_recurrence(
+        if (pattern := to_rrule(due.string, due.lang)) and post_task_recurrence(
             ctx.nt_client, nt_project_id, nt_task_id, pattern, is_all_day
         ):
             return
