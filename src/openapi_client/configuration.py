@@ -428,7 +428,7 @@ conf = openapi_client.Configuration(
                 'description': "No description provided",
             },
             {
-                'url': "/v1/api",
+                'url': "https://api4.nozbe.com/v1/api",
                 'description': "No description provided",
             }
         ]
