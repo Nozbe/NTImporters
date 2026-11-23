@@ -16,6 +16,7 @@ from ntimporters.utils import (
     id16,
     match_nt_users,
     nt_open_projects_len,
+    post_comment,
     set_unassigned_tag,
     trim,
 )
@@ -81,12 +82,12 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
             is_open=project.get("board_kind") == "public",
             extra="",
         )
-        nt_project = (
-            exists("projects", name, imported) or projects_api.post_project(project_model) or {}
-        )
+        is_new = not (nt_project := exists("projects", name, imported))
+        nt_project = nt_project or projects_api.post_project(project_model)
         if not (nt_project_id := nt_project and str(nt_project.id)):
             return
-        add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
+        if is_new:
+            add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
         _import_project_sections(
             nt_client,
@@ -101,7 +102,9 @@ def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_t
 
     monday_projects = monday_client.projects()
     monday_projects_open = [
-        elt.get("id") for elt in monday_projects if elt.get("board_kind") == "public"
+        elt.get("id")
+        for elt in monday_projects
+        if elt.get("board_kind") == "public" and elt.get("state") == "active"
     ]
     check_limits(
         nt_auth_token,
@@ -206,7 +209,7 @@ def _import_tasks(
                 extra="",
                 due_at=task.get("due_at"),
                 is_all_day=task.get("is_all_day"),
-                responsible_id=responsible_id if task.get("due_at") else None,
+                responsible_id=(responsible_id or author_id) if task.get("due_at") else None,
             )
         ):
             if task.get("due_at") and not responsible_id:
@@ -228,26 +231,11 @@ def _import_comments(
     nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None, author_id=None
 ):
     """Import task-related comments"""
-    nt_api_comments = api.CommentsApi(nt_client)
-    author_id = author_id or id16()
     for comment in sorted(
-        monday_client.comments(tr_task_id),
-        key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
+        monday_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("created_at"))
     ):
-        if not exists(
-            "comments", body := format_body(comment.get("text_body") or "…"), imported, nt_task_id
-        ):
-            nt_api_comments.post_comment(
-                models.Comment(
-                    is_pinned=False,
-                    is_team=False,
-                    body=body,
-                    task_id=nt_task_id,
-                    created_at=1,
-                    author_id=author_id,
-                    extra="",
-                )
-            )
+        body = format_body(comment.get("text_body") or "…")
+        post_comment(nt_client, nt_task_id, body, author_id, imported)
 
 
 def format_body(body) -> str:

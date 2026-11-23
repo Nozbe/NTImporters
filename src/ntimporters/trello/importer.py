@@ -8,6 +8,7 @@ from ntimporters.trello.trello_api import TrelloClient
 from ntimporters.utils import (
     API_HOST,
     add_to_project_group,
+    assign_tags,
     check_limits,
     current_nt_member,
     exists,
@@ -19,7 +20,9 @@ from ntimporters.utils import (
     parse_timestamp,
     post_tag,
     set_unassigned_tag,
+    post_comment,
     trim,
+    upload_attachment,
 )
 from openapi_client import models, api
 from openapi_client.exceptions import OpenApiException
@@ -86,12 +89,12 @@ def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_t
             is_open=True,
             extra="",
         )
-        nt_project = (
-            exists("projects", name, imported) or projects_api.post_project(project_model) or {}
-        )
+        is_new = not (nt_project := exists("projects", name, imported))
+        nt_project = nt_project or projects_api.post_project(project_model)
         if not (nt_project_id := nt_project and str(nt_project.id)):
             return
-        add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
+        if is_new:
+            add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
         _import_project_sections(
             nt_client,
@@ -142,6 +145,11 @@ def _import_project_sections(
         "project_sections",
         len(trello_sections := trello_client.sections(project.get("id"))),
     )
+    tags_mapping = _import_tags_per_project(
+        nt_client, trello_client, project, team_id, nt_auth_token
+    )
+    trello_members = trello_client.members_emails() or {}
+    nt_users = match_nt_users(nt_client, trello_members.values())
     for j, section in enumerate(trello_sections):
         nt_section_id = None
         try:
@@ -162,9 +170,6 @@ def _import_project_sections(
         except OpenApiException as exc:
             print(exc)
 
-        trello_members = trello_client.members_emails() or {}
-        nt_users = match_nt_users(nt_client, trello_members.values())
-
         def _get_responsible_id(task: dict):
             if members := task.get("idMembers"):
                 for member_id in members:
@@ -180,6 +185,7 @@ def _import_project_sections(
             responsible_id = _get_responsible_id(task) or nt_member_id if task.get("due") else None
 
             nt_task = exists("tasks", name := trim(task.get("name", "")), imported, nt_project_id)
+            is_new = not nt_task
             if nt_task := nt_task or nt_api_tasks.post_task(
                 models.Task(
                     name=name,
@@ -204,13 +210,11 @@ def _import_project_sections(
             ):
                 if task.get("due") and not responsible_id:
                     set_unassigned_tag(nt_client, str(nt_task.id))
-                _import_tags(
+                assign_tags(
                     nt_client,
                     str(nt_task.id),
-                    task,
-                    _import_tags_per_project(
-                        nt_client, trello_client, project, team_id, nt_auth_token
-                    ),
+                    (tags_mapping.get(tag.get("name") or "Unnamed") for tag in task.get("labels")),
+                    is_new,
                 )
                 _import_comments(
                     nt_client,
@@ -220,7 +224,6 @@ def _import_project_sections(
                     imported=imported,
                     author_id=nt_member_id,
                 )
-                # TODO import attachments, reminders?
 
 
 # pylint: enable=too-many-arguments
@@ -248,50 +251,24 @@ def _import_tags_per_project(
     return nt_tags
 
 
-def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
-    """Assign tags to task"""
-    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
-    assigned = []
-    for tag in task.get("labels"):
-        if nt_tag_id := tags_mapping.get(tag.get("name") or "Unnamed"):
-            if nt_tag_id in assigned:
-                continue
-            try:
-                nt_api_tag_assignments.post_tag_assignment(
-                    models.TagAssignment(
-                        id=id16(),
-                        tag_id=nt_tag_id,
-                        task_id=nt_task_id,
-                    )
-                )
-                assigned.append(nt_tag_id)
-            except Exception as exc:
-                print(exc)
-
-
 def _import_comments(
     nt_client, trello_client, nt_task_id: str, task, imported=None, author_id=None
 ):
     """Import task-related comments"""
     tr_task_id = task.get("id")
-    nt_api_comments = api.CommentsApi(nt_client)
-    comments = [{"text": task.get("desc")}] if task.get("desc") else []
-    comments += sorted(
-        trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
-    )
-    for comment in comments:
-        if not exists("comments", body := comment.get("text") or "…", imported, nt_task_id):
-            nt_api_comments.post_comment(
-                models.Comment(
-                    body=body,
-                    task_id=nt_task_id,
-                    author_id=author_id or id16(),
-                    created_at=1,
-                    is_team=False,
-                    is_pinned=False,
-                    extra="",
-                )
-            )
+    if desc := task.get("desc"):
+        post_comment(nt_client, nt_task_id, desc, author_id, imported)
+    for comment in sorted(
+        trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date"))
+    ):
+        post_comment(nt_client, nt_task_id, comment.get("text"), author_id, imported)
+    for attachment in trello_client.attachments(tr_task_id):
+        name, url = attachment.get("name") or "attachment", attachment.get("url")
+        body = name if attachment.get("isUpload") or name == url else f"{name}\n{url}"
+        if (
+            nt_comment_id := post_comment(nt_client, nt_task_id, body, author_id, imported)
+        ) and attachment.get("isUpload"):
+            upload_attachment(nt_client, nt_comment_id, url, name, trello_client.headers)
 
 
 # def _import_members(nt_client, trello_client, team_id: str):

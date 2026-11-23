@@ -1,4 +1,4 @@
-""" Simple trello REST API client """
+"""Simple trello REST API client"""
 
 import datetime
 import functools
@@ -76,19 +76,10 @@ class TrelloClient:
         members_emails = {}
         for board_id in self.boards_ids:
             for member in self._req(f"boards/{board_id}/members"):
-                if (email := self.member(member.get("id")).get("email")) != self.user().get(
-                    "email"
-                ):
+                if (email := self.member(member.get("id")).get("email")) != self.author_email:
                     members_emails[member.get("id")] = email
 
         return members_emails
-
-    def attachment(self, attachment_url: str):
-        """Get attachment body"""
-        if resp := requests.get(attachment_url, stream=True, headers=self.headers):
-            if resp and hasattr(resp, "raw"):
-                return resp.raw
-        return b""
 
     def checklists(self, task_id: str) -> dict:
         """Get checklists as comments"""

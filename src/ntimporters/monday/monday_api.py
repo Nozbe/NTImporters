@@ -1,4 +1,4 @@
-""" Monday API client module """
+"""Monday API client module"""
 
 import json
 
@@ -17,27 +17,26 @@ class MondayClient:
         self.headers = {"Authorization": app_key}
 
     def _req(self, query) -> dict:
-        if resp := requests.get(
-            self.api_path, json={"query": f"{{ {query} }}"}, headers=self.headers
-        ):
-            if resp.status_code == 200:
-                return resp.json()
-
-        return {}
+        resp = requests.post(
+            self.api_path, json={"query": f"{{ {query} }}"}, headers=self.headers, timeout=60
+        )
+        return resp.json() if resp.status_code == 200 else {}
 
     def user(self) -> dict:
         """Get Monday's user email"""
         return self._req("me{email}").get("data", {}).get("me", {})
 
     def projects(self) -> list[dict]:
-        """Get Monday boards (NT projects)"""
-        return (
-            self._req(
-                f"boards(state:all limit:{self.limit}){{name,id,state,description,board_kind}}"
+        """Get Monday boards (NT projects); sub-items boards and docs skipped"""
+        return [
+            board
+            for board in self._req(
+                f"boards(state:all limit:{self.limit}){{name,id,state,description,board_kind,type}}"
             )
             .get("data", {})
             .get("boards", [])
-        )
+            if board.get("type") == "board"
+        ]
 
     def sections(self, project_id: str) -> list:
         """Get Monday groups (NT project sections)"""
@@ -56,8 +55,14 @@ class MondayClient:
                 if (counter := counter + 1) > 1:
                     break
                 try:
-                    task["is_all_day"] = len(column.get("text", "")) == 10
-                    due_at = parse_timestamp(column.get("text"))
+                    # value holds UTC date/time; text is in account's time zone
+                    value = json.loads(column.get("value") or "{}")
+                    task["is_all_day"] = not value.get("time")
+                    due_at = parse_timestamp(
+                        f"{value.get('date')}T{value.get('time')}Z"
+                        if value.get("time")
+                        else value.get("date") or column.get("text")
+                    )
                 except (json.decoder.JSONDecodeError, ValueError):
                     pass
         return task, counter, due_at

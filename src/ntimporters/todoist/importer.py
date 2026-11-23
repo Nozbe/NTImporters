@@ -25,6 +25,7 @@ from ntimporters.utils import (
     match_nt_users,
     nt_open_projects_len,
     nt_time_zone,
+    post_comment,
     post_tag,
     post_task_recurrence,
     set_unassigned_tag,
@@ -110,7 +111,7 @@ def _import_data(nt_client, todoist, todoist_token: str, team_id: str, nt_auth_t
         author_id=current_nt_member(nt_client, team_id),
         single_tasks_id=get_single_tasks_project_id(nt_client, team_id),
         time_zone=_todoist_time_zone(todoist_token) or nt_time_zone(nt_client),
-        imported=get_imported_entities(nt_client, team_id, IMPORT_NAME),
+        imported=get_imported_entities(nt_client, team_id, IMPORT_NAME, with_single_tasks=True),
         tags=_import_tags(nt_client, todoist, team_id, nt_auth_token),
     )
     for project in projects:
@@ -137,9 +138,10 @@ def _import_project(ctx: Ctx, project: Project):
         nt_project_id = ctx.single_tasks_id
     else:
         try:
-            nt_project = exists(
-                "projects", name := trim(project.name), ctx.imported
-            ) or api.ProjectsApi(ctx.nt_client).post_project(
+            is_new = not (
+                nt_project := exists("projects", name := trim(project.name), ctx.imported)
+            )
+            nt_project = nt_project or api.ProjectsApi(ctx.nt_client).post_project(
                 models.Project(
                     name=name,
                     is_template=False,
@@ -158,9 +160,10 @@ def _import_project(ctx: Ctx, project: Project):
             return
         if not (nt_project_id := nt_project and str(nt_project.id)):
             return
-        add_to_project_group(ctx.nt_client, ctx.team_id, nt_project_id, IMPORT_NAME)
+        if is_new:
+            add_to_project_group(ctx.nt_client, ctx.team_id, nt_project_id, IMPORT_NAME)
 
-    is_sap = nt_project_id == ctx.single_tasks_id
+    is_sap = project.is_inbox_project
     sections = {} if is_sap else _import_sections(ctx, nt_project_id, project.id)
     assignees = _assignees(ctx, project)
     for task in unpack(ctx.todoist.get_tasks(project_id=project.id)):
@@ -231,38 +234,41 @@ def _import_task(
     if missing_responsible := not responsible_id and due_at is not None:
         responsible_id = ctx.author_id
 
-    if nt_task := exists("tasks", name := trim(task.content), ctx.imported, nt_project_id):
-        nt_task_id, is_new = str(nt_task.id), False
-    elif nt_task := api.TasksApi(ctx.nt_client).post_task(
-        models.Task(
-            id=id16(),
-            is_followed=False,
-            is_abandoned=False,
-            name=name,
-            project_id=nt_project_id,
-            author_id=ctx.author_id,
-            missed_repeats=0,
-            created_at=1,
-            extra="",
-            last_activity_at=1,
-            project_section_id=sections.get(task.section_id),
-            project_position=float(task.order or 1),
-            due_at=due_at,
-            is_all_day=is_all_day,
-            responsible_id=responsible_id,
+    is_new = not (
+        nt_task := exists("tasks", name := trim(task.content), ctx.imported, nt_project_id)
+    )
+    if not (
+        nt_task := nt_task
+        or api.TasksApi(ctx.nt_client).post_task(
+            models.Task(
+                id=id16(),
+                is_followed=False,
+                is_abandoned=False,
+                name=name,
+                project_id=nt_project_id,
+                author_id=ctx.author_id,
+                missed_repeats=0,
+                created_at=1,
+                extra="",
+                last_activity_at=1,
+                project_section_id=sections.get(task.section_id),
+                project_position=float(task.order or 1),
+                due_at=due_at,
+                is_all_day=is_all_day,
+                responsible_id=responsible_id,
+            )
         )
     ):
-        nt_task_id, is_new = str(nt_task.id), True
-        if due_at is not None and task.due.is_recurring:
-            _import_recurrence(ctx, nt_project_id, nt_task_id, task.due, is_all_day)
-    else:
         return
+    nt_task_id = str(nt_task.id)
+    if is_new and due_at is not None and task.due.is_recurring:
+        _import_recurrence(ctx, nt_project_id, nt_task_id, task.due, is_all_day)
 
     if not is_sap and missing_responsible:
         set_unassigned_tag(ctx.nt_client, nt_task_id)
     try:
         _import_comments(ctx, nt_task_id, task)
-        assign_tags(ctx.nt_client, nt_task_id, map(ctx.tags.get, task.labels or []), not is_new)
+        assign_tags(ctx.nt_client, nt_task_id, map(ctx.tags.get, task.labels or []), is_new)
     except Exception as exc:
         print(exc)
 
@@ -300,7 +306,7 @@ def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
         unpack(ctx.todoist.get_comments(task_id=task.id)), key=attrgetter("posted_at")
     ):
         body, attachment = comment.content, comment.attachment
-        if attachment and not attachment.file_url and attachment.url not in (None, *body.split()):
+        if attachment and not attachment.file_url and attachment.url and attachment.url not in body:
             body = f"{body}\n{attachment.url}".strip()
         if (
             (nt_comment_id := _post_comment(ctx, nt_task_id, body or _file_name(attachment)))
@@ -312,20 +318,7 @@ def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
 
 def _post_comment(ctx: Ctx, nt_task_id: str, body: str | None) -> str | None:
     """Post comment unless imported before; return its id"""
-    if exists("comments", body := str(body or "…"), ctx.imported, nt_task_id):
-        return None
-    nt_comment = api.CommentsApi(ctx.nt_client).post_comment(
-        models.Comment(
-            is_team=False,
-            is_pinned=False,
-            body=body,
-            task_id=nt_task_id,
-            author_id=ctx.author_id,
-            created_at=1,
-            extra="",
-        )
-    )
-    return nt_comment and str(nt_comment.id)
+    return post_comment(ctx.nt_client, nt_task_id, body, ctx.author_id, ctx.imported)
 
 
 def _file_name(attachment: Attachment | None) -> str | None:

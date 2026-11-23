@@ -5,7 +5,7 @@ from ntimporters.utils import exists, get_imported_entities, parse_timestamp
 
 
 def test_imported_entities_chain():
-    """Same task name / comment body under different parents stay distinct"""
+    """Same task name / comment body under different parents (incl. Single Tasks) stay distinct"""
     nt_api = MagicMock()
     nt_api.GroupAssignmentsApi().get_group_assignments.return_value = [
         NS(object_id="home"),
@@ -23,12 +23,16 @@ def test_imported_entities_chain():
     with (
         patch("ntimporters.utils.api", nt_api),
         patch("ntimporters.utils.get_group_id", return_value="group"),
+        patch("ntimporters.utils.get_single_tasks_project_id", return_value="sap"),
     ):
-        imported = get_imported_entities(None, "team", "Imported from Todoist")
+        imported = get_imported_entities(
+            None, "team", "Imported from Todoist", with_single_tasks=True
+        )
 
     assert exists("projects", "Work", imported).id == "work"
     assert exists("tasks", "Call mom", imported, "home").id == "home-call"
     assert exists("tasks", "Call mom", imported, "work").id == "work-call"
+    assert exists("tasks", "Call mom", imported, "sap").id == "sap-call"
     assert not exists("tasks", "Call mom", imported)
     assert exists("comments", "ok", imported, "home-call")
     assert not exists("comments", "ok", imported, "work-call")

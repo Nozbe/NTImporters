@@ -17,6 +17,7 @@ from ntimporters.utils import (
     match_nt_users,
     nt_open_projects_len,
     parse_timestamp,
+    post_comment,
     post_tag,
     set_unassigned_tag,
     trim,
@@ -125,9 +126,12 @@ def _import_data(
         projects_api = asana.ProjectsApi(asana_client)
         for project in projects_api.get_projects_for_workspace(workspace["gid"], {}):
             project_full = projects_api.get_project(project["gid"], {})
-            nt_project = exists(
-                "projects", project_name := trim(project_full.get("name", "")), imported
-            ) or nt_api_projects.post_project(
+            is_new = not (
+                nt_project := exists(
+                    "projects", project_name := trim(project_full.get("name", "")), imported
+                )
+            )
+            nt_project = nt_project or nt_api_projects.post_project(
                 models.Project(
                     id=id16(),
                     name=project_name,
@@ -146,7 +150,8 @@ def _import_data(
             if not nt_project:
                 continue
             nt_project_id = str(nt_project.id)
-            add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
+            if is_new:
+                add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
 
             # import project sections
             map_section_id = {}
@@ -227,7 +232,6 @@ def _import_tasks(
 ):
     """Import task from Asana to Nozbe"""
     nt_api_tasks = api.TasksApi(nt_client)
-    nt_api_comments = api.CommentsApi(nt_client)
     user_matches = match_nt_users(
         nt_client, [elt.get("email") for elt in asana_users(asana_client)]
     )
@@ -259,9 +263,12 @@ def _import_tasks(
             # skip tasks from other projects
             continue
 
-        nt_task = exists(
-            "tasks", name := trim(task_full.get("name", "")), imported, nt_project_id
-        ) or nt_api_tasks.post_task(
+        is_new = not (
+            nt_task := exists(
+                "tasks", name := trim(task_full.get("name", "")), imported, nt_project_id
+            )
+        )
+        nt_task = nt_task or nt_api_tasks.post_task(
             models.Task(
                 id=id16(),
                 name=name,
@@ -290,46 +297,24 @@ def _import_tasks(
             nt_client,
             nt_task_id,
             (map_tag_id.get(tag.get("gid")) for tag in task_full.get("tags") or []),
-            skip_assigned=bool(task_full.get("tags")),
+            is_new,
         )
 
-        # import comments
+        def _post_comment(body: str | None) -> str | None:
+            return post_comment(nt_client, nt_task_id, body, nt_member_id, imported)
 
-        def _post_comment(body, task_id) -> str | None:
-            nt_comment = nt_api_comments.post_comment(
-                models.Comment(
-                    body=body or "…",
-                    is_team=False,
-                    is_pinned=False,
-                    extra="",
-                    task_id=task_id,
-                    author_id=nt_member_id,
-                    created_at=1,
-                )
+        if task_description := task_full.get("notes"):
+            _post_comment(task_description)
+        if checklist := "\n".join(
+            f"- [{'x' if item.get('completed') else ' '}] {item.get('name')}"
+            for item in asana.TasksApi(asana_client).get_subtasks_for_task(
+                task["gid"], {"opt_fields": "name,completed"}
             )
-            return nt_comment and str(nt_comment.id)
-
-        if (task_description := task_full.get("notes", "")) and not exists(
-            "comments", task_description, imported, nt_task_id
         ):
-            _post_comment(task_description, nt_task_id)
-        checklist = []
-        for item in asana.TasksApi(asana_client).get_subtasks_for_task(
-            task["gid"], {"opt_fields": "name,completed"}
-        ):
-            checked = "- [ ]" if not item.get("completed") else "- [x]"
-            checklist.append(f"{checked} {item.get('name')}")
-
-        if checklist:
-            body = "\n".join(checklist)
-            if not exists("comments", body, imported, nt_task_id):
-                _post_comment(body, nt_task_id)
-
+            _post_comment(checklist)
         for story in asana.StoriesApi(asana_client).get_stories_for_task(task["gid"], {}):
-            if story.get("type") == "comment" and not exists(
-                "comments", body := story.get("text") or "…", imported, nt_task_id
-            ):
-                _post_comment(body, nt_task_id)
+            if story.get("type") == "comment":
+                _post_comment(story.get("text"))
 
         for attachment in asana.AttachmentsApi(asana_client).get_attachments_for_object(
             task["gid"], {"opt_fields": "name,host,download_url,view_url"}
@@ -337,11 +322,7 @@ def _import_tasks(
             name = attachment.get("name") or "attachment"
             is_file = attachment.get("host") == "asana" and attachment.get("download_url")
             body = name if is_file else f"{name}\n{attachment.get('view_url') or ''}".strip()
-            if (
-                not exists("comments", body, imported, nt_task_id)
-                and (nt_comment_id := _post_comment(body, nt_task_id))
-                and is_file
-            ):
+            if (nt_comment_id := _post_comment(body)) and is_file:
                 upload_attachment(nt_client, nt_comment_id, attachment.get("download_url"), name)
 
 
