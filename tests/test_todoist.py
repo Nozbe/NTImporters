@@ -1,11 +1,11 @@
 from datetime import UTC, date, datetime
 
-from dateutil.rrule import rrulestr
-
 import pytest
+from dateutil.rrule import rrulestr
+from todoist_api_python.models import Due
+
 from ntimporters.todoist.importer import parse_due
 from ntimporters.todoist.recurrence import to_rrule
-from todoist_api_python.models import Due
 
 
 @pytest.mark.parametrize(

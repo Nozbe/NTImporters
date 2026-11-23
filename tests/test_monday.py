@@ -1,0 +1,113 @@
+from unittest.mock import Mock, patch
+
+import pytest
+
+from ntimporters.monday.monday_api import MondayClient
+from ntimporters.utils import ImportException
+
+
+@pytest.mark.parametrize(
+    "status, payload, message",
+    [
+        (500, {}, "HTTP 500"),
+        (200, {"errors": [{"message": "Bad query"}]}, "Bad query"),
+    ],
+)
+def test_req_raises(status, payload, message):
+    response = Mock(status_code=status, content=b"x", json=Mock(return_value=payload))
+    with (
+        patch("ntimporters.monday.monday_api.requests.post", return_value=response),
+        pytest.raises(ImportException, match=message),
+    ):
+        MondayClient("key")._req("me{email}")
+
+
+def test_req_waits_out_rate_limit(monkeypatch):
+    """429 / exhausted budget: wait retry_in_seconds, then retry"""
+    limited = {
+        "errors": [{"extensions": {"code": "COMPLEXITY_BUDGET_EXHAUSTED", "retry_in_seconds": 7}}]
+    }
+    responses = [Mock(status_code=429, content=b"x", json=Mock(return_value=limited))] * 2 + [
+        Mock(status_code=200, content=b"x", json=Mock(return_value={"data": {"ok": 1}}))
+    ]
+    monkeypatch.setattr("ntimporters.monday.monday_api.time.sleep", sleep := Mock())
+    with patch("ntimporters.monday.monday_api.requests.post", side_effect=responses):
+        assert MondayClient("key")._req("me{id}") == {"data": {"ok": 1}}
+    assert [elt.args[0] for elt in sleep.call_args_list] == [7, 7]
+
+
+def test_paged():
+    client = MondayClient("key")
+    client.limit = 2
+    pages = {1: [1, 2], 2: [3, 4], 3: [5]}
+    with patch.object(
+        client, "_req", side_effect=lambda query: {"data": {"x": pages.get(int(query))}}
+    ) as req:
+        assert client._paged(str, "data.x") == [1, 2, 3, 4, 5]
+    assert req.call_count == 3
+
+
+def _raw(id_, *columns, updates=()):
+    return {"id": id_, "name": f"n{id_}", "column_values": list(columns), "updates": list(updates)}
+
+
+DATE = {"type": "date", "text": "x", "value": '{"date": "2024-05-01", "time": "10:00:00"}'}
+PEOPLE = {"type": "people", "value": '{"personsAndTeams": [{"id": 7, "kind": "person"}]}'}
+
+
+@pytest.mark.parametrize(
+    "columns, due_at, is_all_day, assigned",
+    [
+        ((DATE, PEOPLE), 1714557600000, False, ["7"]),
+        ((DATE | {"value": '{"date": "2024-05-01"}'},), 1714521600000, True, []),
+        ((DATE, DATE), None, False, []),
+    ],
+)
+def test_item(columns, due_at, is_all_day, assigned):
+    replies = [{"created_at": "2024-01-03T00:00:00Z", "text_body": "r"}]
+    updates = [
+        {"created_at": "2024-01-02T00:00:00Z", "text_body": "u2", "replies": replies},
+        {"created_at": "2024-01-01T00:00:00Z", "text_body": "u1"},
+    ]
+    assert MondayClient("key")._item(_raw(1, *columns, updates=updates), "g", 3) == {
+        "id": 1,
+        "name": "n1",
+        "group": "g",
+        "position": 3,
+        "due_at": due_at,
+        "is_all_day": is_all_day,
+        "assigned": assigned,
+        "comments": [updates[1], updates[0], *replies],
+    }
+
+
+def test_board_pages_and_orders():
+    client = MondayClient("key")
+    client.updates_limit = 1
+    full = [{"created_at": "2024-01-02", "text_body": "b"}, {"created_at": "2024-01-01"}]
+    item1 = _raw(1, updates=[full[0]]) | {"group": {"id": "g"}, "subitems": [_raw(2)]}
+    responses = [
+        {
+            "data": {
+                "boards": [
+                    {"groups": [{"id": "g"}], "items_page": {"cursor": "c", "items": [item1]}}
+                ]
+            }
+        },
+        {
+            "data": {
+                "next_items_page": {"cursor": None, "items": [_raw(3) | {"group": {"id": "h"}}]}
+            }
+        },
+        {"data": {"items": [{"updates": full}]}},
+    ]
+    with patch.object(client, "_req", side_effect=responses) as req:
+        groups, tasks = client.board("b")
+    assert req.call_count == 3
+    assert groups == [{"id": "g"}]
+    assert [(t["id"], t["group"], t["position"]) for t in tasks] == [
+        (3, "h", 3),
+        (2, "g", 2),
+        (1, "g", 1),
+    ]
+    assert tasks[2]["comments"] == full[::-1]

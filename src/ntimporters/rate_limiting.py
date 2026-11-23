@@ -1,4 +1,5 @@
-""" Rate limiting proxy """
+"""Rate limiting proxy"""
+
 import datetime
 from time import sleep
 

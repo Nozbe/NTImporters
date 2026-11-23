@@ -1,38 +1,38 @@
-from types import SimpleNamespace as NS
-from unittest.mock import MagicMock, patch
-
-from ntimporters.utils import exists, get_imported_entities, nt_api_client, parse_timestamp
+from ntimporters.utils import dig, exists, get_imported_entities, nt_api_client, parse_timestamp
 
 
-def test_imported_entities_chain():
-    """Same task name / comment body under different parents (incl. Single Tasks) stay distinct"""
-    nt_api = MagicMock()
-    nt_api.GroupAssignmentsApi().get_group_assignments.return_value = [
-        NS(object_id="home"),
-        NS(object_id="work"),
-    ]
-    nt_api.ProjectsApi().get_project_by_id.side_effect = lambda pid: NS(id=pid, name=pid.title())
-    nt_api.ProjectSectionsApi().get_project_sections.return_value = []
-    nt_api.TasksApi().get_tasks.side_effect = lambda project_id: [
-        NS(id=f"{project_id}-call", name="Call mom")
-    ]
-    nt_api.CommentsApi().get_comments.side_effect = lambda task_id: (
-        [NS(id="c1", body="ok")] if task_id == "home-call" else []
-    )
-    nt_api.TagsApi().get_tags.return_value = []
-    with (
-        patch("ntimporters.utils.api", nt_api),
-        patch("ntimporters.utils.get_group_id", return_value="group"),
-        patch("ntimporters.utils.get_single_tasks_project_id", return_value="sap"),
-    ):
-        imported = get_imported_entities(
-            None, "team", "Imported from Todoist", with_single_tasks=True
-        )
+def test_imported_entities_chain(nt):
+    """Same names under different parents (incl. Single Tasks) stay distinct; under one parent
+    each imported record matches once; only group's data and author's comments fetched"""
+    nt.records = {
+        "/tasks": [
+            {"id": "home-call", "name": "Call mom", "created_at": 2, "project_id": "home"},
+            {"id": "home-call-1", "name": "Call mom", "created_at": 1, "project_id": "home"},
+            {"id": "work-call", "name": "Call mom", "project_id": "work"},
+            {"id": "sap-call", "name": "Call mom", "project_id": "sap"},
+            {"id": "other-call", "name": "Call mom", "project_id": "other"},
+        ],
+        "/group_assignments": [
+            {"object_id": "home", "group_id": "group"},
+            {"object_id": "work", "group_id": "group"},
+            {"object_id": "other", "group_id": "elsewhere"},
+        ],
+        "/comments": [
+            {"id": "c1", "body": "ok", "task_id": "home-call", "author_id": "me"},
+            {"id": "c2", "body": "ok", "task_id": "work-call", "author_id": "else"},
+        ],
+    }
+    team_projects = [{"id": pid, "name": pid.title()} for pid in ("home", "work", "other")]
+    imported = get_imported_entities(None, "group", "me", team_projects, "sap")
 
-    assert exists("projects", "Work", imported).id == "work"
-    assert exists("tasks", "Call mom", imported, "home").id == "home-call"
-    assert exists("tasks", "Call mom", imported, "work").id == "work-call"
-    assert exists("tasks", "Call mom", imported, "sap").id == "sap-call"
+    assert exists("projects", "Work", imported) == "work"
+    assert not exists("projects", "Other", imported)  # not in group
+    # same-named tasks matched one by one, in creation order
+    assert exists("tasks", "Call mom", imported, "home") == "home-call-1"
+    assert exists("tasks", "Call mom", imported, "home") == "home-call"
+    assert not exists("tasks", "Call mom", imported, "home")
+    assert exists("tasks", "Call mom", imported, "work") == "work-call"
+    assert exists("tasks", "Call mom", imported, "sap") == "sap-call"
     assert not exists("tasks", "Call mom", imported)
     assert exists("comments", "ok", imported, "home-call")
     assert not exists("comments", "ok", imported, "work-call")
@@ -53,3 +53,12 @@ def test_nt_api_client(monkeypatch):
     assert client.default_headers.get("X-DevToken") == "dev"
     assert client.configuration.username == "user"
     assert 429 in client.configuration.retries.status_forcelist
+
+
+def test_dig():
+    """Dotted path through dicts and list indices; default on miss or None"""
+    data = {"a": [{"b": 1}, {"b": None}]}
+    assert dig(data, "a.0.b") == 1
+    assert dig(data, "a.1.b", 0) == 0
+    assert dig(data, "a.5.b") is None
+    assert dig(data, "a.x") is None

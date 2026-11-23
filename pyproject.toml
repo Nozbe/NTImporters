@@ -35,6 +35,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 exclude = ["src/openapi_client/**"]
+line-length = 100
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]

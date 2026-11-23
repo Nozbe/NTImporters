@@ -9,5 +9,9 @@ client:  # regenerate src/openapi_client from SPEC (file or URL); no hand edits 
 	rm -rf .client_build
 lint:
 	uv run ruff check --output-format=github .
+	uv run ruff format --check .
+format:
+	uv run ruff check --fix .
+	uv run ruff format .
 test:
 	uv run pytest
