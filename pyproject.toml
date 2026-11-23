@@ -5,7 +5,7 @@ description = "Set of migrators to import data from 3rd party apps to Nozbe"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "jsamelak", email = "jarek@nozbe.com" }]
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "asana>=5.0.6",
     "more-itertools>=10",
