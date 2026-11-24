@@ -51,7 +51,7 @@ def recurrence(range_=None, **pattern):
             recurrence({"type": "numbered", "numberOfOccurrences": 5}, type="daily"),
             "FREQ=DAILY;COUNT=5",
         ),
-        # unmappable: comment instead
+        # unmappable
         (recurrence({"type": "numbered"}, type="daily"), None),
         (recurrence(type="absoluteMonthly"), None),
         (recurrence(type="weekly", daysOfWeek=["someday"]), None),
@@ -69,7 +69,7 @@ def test_to_rrule(value, rrule):
     "due, expected",
     [
         ({"dateTime": "2025-03-04T00:00:00.0000000", "timeZone": "UTC"}, (1741046400000, True)),
-        # app-set: user's local midnight in UTC (Warsaw +1, New York -5)
+        # app-set: local midnight as UTC (Warsaw +1, New York -5)
         ({"dateTime": "2025-03-03T23:00:00.0000000", "timeZone": "UTC"}, (1741046400000, True)),
         ({"dateTime": "2025-03-04T05:00:00.0000000", "timeZone": "UTC"}, (1741046400000, True)),
         (None, (None, False)),
@@ -95,7 +95,7 @@ def test_client_follows_next_link():
 
 
 def test_comments_from_expanded_task():
-    """checklistItems, linkedResources read from task: no per-task requests"""
+    """checklistItems, linkedResources from task; no per-task requests"""
     nz, todo = MagicMock(), MagicMock()
     task = {
         "id": "t",

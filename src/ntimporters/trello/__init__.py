@@ -1,4 +1,4 @@
-"""Trello module"""
+"""Trello importer"""
 
 from ntimporters.trello.importer import SPEC, run_import
 

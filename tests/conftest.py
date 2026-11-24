@@ -8,7 +8,7 @@ import urllib3
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    """Tests never reach a real server (default API host is production)"""
+    """No network: default API host is production"""
 
     def refuse(*args, **kwargs):
         raise RuntimeError(f"network call in test: {args[1:3]}")
@@ -19,10 +19,8 @@ def no_network(monkeypatch):
 
 @pytest.fixture
 def nt(monkeypatch):
-    """Fake Nozbe API in ntimporters.nozbe.
-    nt.api: MagicMock for openapi_client.api, e.g. nt.api.TasksApi().post_task.
-    nt.records: path -> records; fetch_all serves those matching filters on fields they have
-    ('fields' ignored). nt.fetch_all: its MagicMock."""
+    """Fake ntimporters.nozbe API. nt.api: MagicMock of openapi_client.api;
+    nt.fetch_all: MagicMock serving nt.records[path] filtered on keys present, 'fields' ignored"""
     fake = NS(api=MagicMock(), records={})
 
     def fetch_all(_client, path, **filters):

@@ -11,9 +11,9 @@ from ntimporters.utils import checklist, dig, parse_timestamp
 from openapi_client import models
 
 SPEC = {
-    "code": "asana",  # codename / ID of importer
-    "name": "Asana",  # name of application
-    "url": "https://nozbe.help/advancedfeatures/importers/#asana",  # link to documentation / specs / API
+    "code": "asana",
+    "name": "Asana",
+    "url": "https://nozbe.help/advancedfeatures/importers/#asana",
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 
@@ -38,16 +38,16 @@ COLOR_MAP = {
 SKIPPED_WORKSPACES = {"1162055570357937"}
 
 IMPORT_NAME = "Imported from Asana"
-# everything _import_tasks / _import_comments read, so list endpoints replace per-task get_task
+# all _import_tasks / _import_comments read: no per-task get_task
 TASK_FIELDS = (
     "name,notes,due_on,due_at,completed_at,assignee,memberships.project,memberships.section,"
     "projects,tags,num_subtasks"
 )
 
 
-# main method called by Nozbe app
+# Nozbe app entry point
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception | str | None:
-    """Perform import from Asana to Nozbe"""
+    """Asana -> Nozbe"""
 
     def _import():
         conf = asana.Configuration()
@@ -61,7 +61,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception |
 
 
 def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
-    """Import everything from Asana to Nozbe"""
+    """per workspace: tags, projects, sections, tasks; my loose tasks -> Single Tasks"""
     workspaces = get_workspaces(asana_client)
     projects_api = asana.ProjectsApi(asana_client)
     sections_api = asana.SectionsApi(asana_client)
@@ -108,7 +108,7 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
             for position, section in enumerate(
                 sections_api.get_sections_for_project(project.get("gid"), {"opt_fields": "name"})
             ):
-                # Asana sections have no archived state
+                # no archived state in Asana
                 if section.get("name") == "Untitled section":
                     continue
                 if section_id := nz.section(nt_project_id, section.get("name", ""), position):
@@ -154,8 +154,7 @@ def _import_tasks(
     loose: bool = False,
     project_gid: str | None = None,
 ):
-    """Import tasks (records with TASK_FIELDS); loose: only those outside any project;
-    section from the membership in project_gid"""
+    """records with TASK_FIELDS; loose: skip project tasks; section: membership in project_gid"""
     for task in asana_tasks:
         if loose and task.get("projects"):
             continue
@@ -194,7 +193,7 @@ def _due(task: dict) -> date | datetime | None:
 
 
 def _import_comments(nz: NozbeImport, asana_client, nt_task_id: str, task: dict):
-    """Notes, subtasks as checklist, comment stories, attachments"""
+    """notes, subtasks as checklist, comment stories, attachments"""
     gid = task.get("gid")
     if notes := task.get("notes"):
         nz.comment(nt_task_id, notes)
@@ -225,12 +224,12 @@ def _import_comments(nz: NozbeImport, asana_client, nt_task_id: str, task: dict)
 
 
 def _map_color(asana_color: str | None) -> models.Color | None:
-    """Maps Asana color onto Nozbe color"""
+    """None if unmapped"""
     return models.Color(color) if (color := COLOR_MAP.get(asana_color or "")) else None
 
 
 def asana_users(asana_client, workspaces: list) -> list[dict]:
-    """Asana users (gid, email) with email, from all workspaces"""
+    """users (gid, email) having email, all workspaces"""
     return [
         user
         for workspace in workspaces
@@ -242,7 +241,7 @@ def asana_users(asana_client, workspaces: list) -> list[dict]:
 
 
 def get_workspaces(asana_client) -> list:
-    """Accessible asana workspaces"""
+    """accessible, minus SKIPPED_WORKSPACES"""
     return [
         workspace
         for workspace in asana.WorkspacesApi(asana_client).get_workspaces({})

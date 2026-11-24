@@ -11,8 +11,8 @@ from ntimporters.nozbe import NozbeImport, run_safely
 from ntimporters.utils import dig, parse_timestamp
 
 SPEC = {
-    "code": "monday",  # codename / ID of importer
-    "name": "Monday",  # name of application
+    "code": "monday",
+    "name": "Monday",
     "url": "https://nozbe.help/advancedfeatures/importers/#monday",
     "input_fields": ("team_id", "nt_auth_token", "app_key"),
 }
@@ -20,9 +20,8 @@ IMPORT_NAME = "Imported from Monday"
 PEOPLE = {"people", "multiple-person"}
 
 
-# main method called by Nozbe app
 def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Exception | str | None:
-    """Perform import from monday to Nozbe"""
+    """Nozbe app entry point"""
     return run_safely(
         lambda: _import_data(
             NozbeImport(nt_auth_token, team_id, IMPORT_NAME), MondayClient(app_key)
@@ -33,7 +32,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Exception | st
 
 
 def _import_data(nz: NozbeImport, monday: MondayClient):
-    """Import active boards (projects), groups (sections), items (tasks)"""
+    """active boards -> projects, groups -> sections, items -> tasks"""
     boards = [board for board in monday.projects() if board.get("state") == "active"]
     nz.check_open_projects(
         board.get("name") for board in boards if board.get("board_kind") == "public"
@@ -44,7 +43,7 @@ def _import_data(nz: NozbeImport, monday: MondayClient):
 
 
 def _import_board(nz: NozbeImport, monday: MondayClient, board: dict, responsible: dict):
-    """Import board with its groups and items"""
+    """board -> project + sections, tasks, comments"""
     if not (
         nt_project_id := nz.project(
             board.get("name", ""),
@@ -87,7 +86,7 @@ def format_body(body: str | None) -> str | None:
 
 
 def _thread(updates: list[dict]) -> list[dict]:
-    """Updates and their replies, oldest first"""
+    """updates + replies, flat, oldest first"""
     return sorted(
         itertools.chain.from_iterable(
             [update, *(update.pop("replies", None) or [])] for update in updates
@@ -97,15 +96,13 @@ def _thread(updates: list[dict]) -> list[dict]:
 
 
 def _task(raw: dict, group: str | None, position: int) -> dict:
-    """Task of item or subitem raw: due if exactly one dated date column,
-    assigned from first people column, comments"""
-    # ASSUMPTION: if only one date-type column then it is the due date
+    """item/subitem -> task; due: sole dated date column; assigned: first set people column"""
     columns = raw.get("column_values") or []
     due = None
     match [col for col in columns if col.get("type") == "date" and col.get("text")]:
         case [column]:
             try:
-                # value holds UTC date/time; text is in account's time zone
+                # value: UTC; text: account time zone
                 value = json.loads(column.get("value") or "{}")
                 due = (
                     isoparse(f"{value.get('date')}T{value.get('time')}Z")
@@ -130,8 +127,7 @@ def _task(raw: dict, group: str | None, position: int) -> dict:
 
 
 def _tasks(items: list[dict]) -> list[dict]:
-    """Tasks of items, each followed by its subitems, numbered 1.. in that order,
-    returned last first"""
+    """items, each then its subitems; positions 1.. in that order; returned reversed"""
     position = itertools.count(1)
     tasks = [
         _task(raw, dig(item, "group.id"), next(position))

@@ -11,8 +11,8 @@ from ntimporters.nozbe import NozbeImport, run_safely
 from ntimporters.utils import checklist, dig, parse_timestamp
 
 SPEC = {
-    "code": "mstodo",  # codename / ID of importer
-    "name": "Microsoft To Do",  # name of application
+    "code": "mstodo",
+    "name": "Microsoft To Do",
     "url": "https://nozbe.help/advancedfeatures/importers/",
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
@@ -30,9 +30,8 @@ DAYS = {
 INDEX = {"first": 1, "second": 2, "third": 3, "fourth": 4, "last": -1}
 
 
-# main method called by Nozbe app
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception | str | None:
-    """Perform import from Microsoft To Do to Nozbe"""
+    """Nozbe app entry point"""
     return run_safely(
         lambda: _import_data(
             NozbeImport(nt_auth_token, team_id, IMPORT_NAME, with_single_tasks=True),
@@ -51,7 +50,7 @@ def _is_default(task_list: dict) -> bool:
 
 
 def _import_data(nz: NozbeImport, todo: MSTodoClient):
-    """Import lists (projects; default "Tasks" list into Single Tasks, Outlook's flagged emails skipped)"""
+    """lists -> projects; default list -> Single Tasks; flagged emails skipped"""
     lists = [elt for elt in todo.lists() if elt.get("wellknownListName") != "flaggedEmails"]
     nz.check_open_projects(elt.get("displayName") for elt in lists if not _is_default(elt))
     for task_list in lists:
@@ -59,7 +58,7 @@ def _import_data(nz: NozbeImport, todo: MSTodoClient):
 
 
 def _import_list(nz: NozbeImport, todo: MSTodoClient, task_list: dict):
-    """Import list with its tasks; categories and high importance as tags"""
+    """list -> project + tasks; categories, high importance -> tags"""
     if _is_default(task_list):
         nt_project_id = nz.single_tasks_id
     else:
@@ -74,29 +73,28 @@ def _import_list(nz: NozbeImport, todo: MSTodoClient, task_list: dict):
 
 
 def _labels(task: dict) -> list[str]:
-    """Tag names of task: categories, HIGH_IMPORTANCE if high"""
+    """categories + HIGH_IMPORTANCE if high"""
     high = [HIGH_IMPORTANCE] if task.get("importance") == "high" else []
     return [*(task.get("categories") or []), *high]
 
 
 def parse_due(due: dict | None) -> date | None:
-    """dueDateTime (UTC, Prefer header) -> its date; None if none. Graph gives the date's
-    midnight in UTC (API-set) or the user's local midnight in UTC (app-set): rounded to
-    nearest UTC midnight, exact for offsets under 12 h."""
+    """dueDateTime (UTC via Prefer) -> date. Graph: UTC midnight (API-set) or local
+    midnight (app-set) -> round to nearest UTC midnight; exact for |offset| < 12 h"""
     if (moment := parse_timestamp(dig(due, "dateTime"))) is None:
         return None
     return datetime.fromtimestamp((moment + DAY_MS // 2) // DAY_MS * DAY_MS // 1000, UTC).date()
 
 
 def _remind_at(task: dict) -> int | None:
-    """Reminder ms of open task with reminder on"""
+    """reminder ms; None unless on and task open"""
     if task.get("isReminderOn") and task.get("status") != "completed":
         return parse_timestamp(dig(task, "reminderDateTime.dateTime"))
     return None
 
 
 def _ended_at(task: dict) -> int | None:
-    """Completion ms of completed task"""
+    """completion ms (else lastModified); None unless completed"""
     if task.get("status") != "completed":
         return None
     return parse_timestamp(dig(task, "completedDateTime.dateTime")) or parse_timestamp(
@@ -153,7 +151,7 @@ def _import_task(
     position: int,
     tags: dict[str, str],
 ):
-    """Import task with tags, recurrence and comments"""
+    """task -> Nozbe task + tags, recurrence, comments"""
     recurrence = task.get("recurrence")
     nt_task_id, is_new = nz.task(
         nt_project_id,
@@ -176,7 +174,7 @@ def _import_task(
 
 
 def _text(body: dict | None) -> str:
-    """itemBody content as plain text"""
+    """itemBody -> plain text"""
     content = dig(body, "content", "").replace("\r\n", "\n").replace("\r", "\n")
     if dig(body, "contentType") == "html":
         content = re.sub(r"(?is)<(head|style|script)\b.*?</\1>", "", content)
@@ -189,7 +187,7 @@ def _text(body: dict | None) -> str:
 def _import_comments(
     nz: NozbeImport, todo: MSTodoClient, list_id: str, nt_task_id: str, task: dict
 ):
-    """Body, checklist, linked resources and file attachments of task"""
+    """body, checklist, linked resources, file attachments -> task"""
     task_id = task.get("id")
     if body := _text(task.get("body")):
         nz.comment(nt_task_id, body)

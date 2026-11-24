@@ -10,19 +10,18 @@ from ntimporters.trello.trello_api import TrelloClient, checklists
 from ntimporters.utils import dig, map_color, parse_timestamp
 
 SPEC = {
-    "code": "trello",  # codename / ID of importer
-    "name": "Trello",  # name of application
+    "code": "trello",
+    "name": "Trello",
     "url": "https://nozbe.help/advancedfeatures/importers/#trello",
     "input_fields": ("nt_auth_token", "app_key", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Trello"
 
 
-# main method called by Nozbe app
 def run_import(
     nt_auth_token: str, auth_token: str, app_key: str, team_id: str
 ) -> Exception | str | None:
-    """Perform import from Trello to Nozbe"""
+    """Nozbe app entry point"""
     return run_safely(
         lambda: _import_data(
             NozbeImport(nt_auth_token, team_id, IMPORT_NAME), TrelloClient(app_key, auth_token)
@@ -34,7 +33,7 @@ def run_import(
 
 
 def _import_data(nz: NozbeImport, trello: TrelloClient):
-    """Import boards (projects), lists (sections), cards (tasks)"""
+    """boards -> projects, lists -> sections, cards -> tasks"""
     boards = trello.projects()
     nz.check_open_projects(board.get("name") for board in boards if not board.get("closed"))
     responsible = nz.members(trello.members_emails(boards), owner=trello.author_id)
@@ -43,7 +42,7 @@ def _import_data(nz: NozbeImport, trello: TrelloClient):
 
 
 def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsible: dict):
-    """Import board with its lists, labels and cards"""
+    """board -> project + sections, tags, tasks"""
     if not (
         nt_project_id := nz.project(
             board.get("name", ""),
@@ -55,7 +54,7 @@ def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsibl
     ):
         return
     cards, comments = trello.tasks(board.get("id")), trello.comments(board.get("id"))
-    lists = [  # archived lists only if they hold open cards
+    lists = [  # archived: only if holding open cards
         elt for elt in board.get("lists") or [] if not elt.get("closed") or cards.get(elt.get("id"))
     ]
     tag_ids = nz.tags(
@@ -91,14 +90,14 @@ def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsibl
 
 
 def _label_name(label: dict) -> str:
-    """Label name; 'Unnamed' if empty"""
+    """name or 'Unnamed'"""
     return label.get("name") or "Unnamed"
 
 
 def _import_comments(
     nz: NozbeImport, trello: TrelloClient, nt_task_id: str, card: dict, comments: list[str]
 ):
-    """Description, comments (oldest first), checklists and attachments of card"""
+    """desc, comments (oldest first), checklists, attachments -> task"""
     if desc := card.get("desc"):
         nz.comment(nt_task_id, desc)
     for text in comments + checklists(card):
@@ -114,11 +113,11 @@ def _import_comments(
 
 
 def _is_trello(url: str | None) -> bool:
-    """URL on trello.com (OAuth headers sent only there)"""
+    """host is (sub)trello.com; only such get OAuth headers"""
     host = urlparse(url or "").hostname or ""
     return host == "trello.com" or host.endswith(".trello.com")
 
 
 def _color(background: str | None) -> str | None:
-    """Trello board background name -> Nozbe color name (photos: None)"""
+    """Trello background -> Nozbe color name"""
     return {"sky": "lightblue", "lime": "green", "grey": "stone"}.get(background, background)

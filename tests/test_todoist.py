@@ -58,7 +58,7 @@ def test_parse_due_empty():
         ("every morning", "FREQ=DAILY"),
         ("every jan 27", "FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=27"),
         ("co 27 stycznia", "FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=27"),
-        # unbounded rule would be wrong: comment instead
+        # would be unbounded
         ("every day starting jan 1 until feb 28", None),
         ("every day for 3 weeks", None),
         ("every monday morning", None),
@@ -94,7 +94,7 @@ def test_owner_and_time_zone_from_single_user_request():
 
 
 def test_retry_transport(monkeypatch):
-    """429/503 retried: Retry-After seconds if sent, else backoff; other statuses returned"""
+    """429/503 retried after Retry-After, else backoff; other statuses returned"""
     responses = iter(
         [
             httpx.Response(429, headers={"Retry-After": "7"}),
@@ -137,7 +137,7 @@ def test_comments_one_sync_grouped():
 
 
 def test_comments_bad_note_falls_back_per_task():
-    """A note the SDK can't parse: None (all tasks fetch comments per task), not a crash"""
+    """Unparseable note: None (comments fetched per task), no crash"""
     with patch("requests.Session.post") as post:
         post.return_value.json.return_value = {"notes": [{"id": "1", "item_id": "t1"}]}
         assert importer._comments("token") is None

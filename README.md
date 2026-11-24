@@ -1,10 +1,8 @@
 # NTImporters
 
-**NTImporters** helps in importing data to [Nozbe](https://nozbe.app) from other task-management / to-do apps.
+**NTImporters** imports data into [Nozbe](https://nozbe.app) from other task-management / to-do apps, via their public APIs.
 
-**NTImporters** uses publicly available APIs to transfer data between supported apps and [Nozbe](https://nozbe.app).
-
-List of supported APIs:
+Supported APIs:
 
 - Asana - [API](https://developers.asana.com/docs/asana)
 - Trello - [API](https://developer.atlassian.com/cloud/trello/rest/api-group-actions/)
@@ -16,27 +14,27 @@ Nozbe API - https://nozbe.com/api
 
 ## Usage
 
-**NTImporters** is used directly by the Nozbe app.
+The Nozbe app uses **NTImporters** directly.
 
 1. Sign up or log in at https://nozbe.app
-2. Go to `Settings -> Importers` and choose application to import data from
-3. Provide `Personal Access Token` / `API key` to your account registered in application selected in step 2
-   (Microsoft To Do: an access token from Graph Explorer, see the [help page](https://nozbe.help/advancedfeatures/importers/)).
+2. Go to `Settings -> Importers` and choose the source app
+3. Provide the source app's `Personal Access Token` / `API key`
+   (Microsoft To Do: an access token from Graph Explorer, see the [help page](https://nozbe.help/advancedfeatures/importers/))
 4. Import your data
 5. Enjoy Nozbe!
 
-Questions? Contact support: support@nozbe.com
+Questions? support@nozbe.com
 
 ## Contributing
 
-You are welcome to contribute to **NTImporters** project by creating PRs with implementations of new importers or improvements to existing ones.
+PRs with new importers or improvements are welcome.
 
 ### Contributing guide
 
-- Each importer should be located in a separate package in `/src/ntimporters`
-- Each importer should implement `SPEC` to identify importer and `run_import` method for performing import
-- `run_import` returns `None` on success, otherwise the error (Nozbe4Backend reports it to Sentry and retries the import); wrap the import in `ntimporters.nozbe.run_safely`
-- An importer only reads its source app; all writing to Nozbe goes through `ntimporters.nozbe.NozbeImport`:
+- One package per importer in `/src/ntimporters`
+- Each importer implements `SPEC` (identifies it) and `run_import` (performs the import)
+- `run_import` returns `None` on success, else the error (Nozbe4Backend reports it to Sentry and retries); wrap the import in `ntimporters.nozbe.run_safely`
+- An importer only reads its source app; all Nozbe writes go through `ntimporters.nozbe.NozbeImport`:
 
   ```python
   nz = NozbeImport(nt_auth_token, team_id, "Imported from MyApp")
@@ -57,12 +55,20 @@ You are welcome to contribute to **NTImporters** project by creating PRs with im
   nz.attachment(task_id, file["name"], file["url"], is_file=True, headers=auth_headers)
   ```
 
-  It keeps imported projects in the "Imported from <app>" group and makes re-runs safe: projects match by name, sections and tasks by name within their project, comments by body within their task. Shared rules live there too: limits (projects imported before don't count; sections checked per project as created), members matched by email (the token owner is the importing user), a new task's recurrence (`recurrence=(rrule, fallback comment)`) is set only if it is due, a reminder (`remind_at=` ms) only on a new task, a due task goes to its mapped assignee, else to the author (with a "missing responsibility" tag if the source assignee couldn't be mapped), tasks without due date have no responsible person, Single Tasks are the author's.
-- Partial failures (one attachment, one tag) are logged as warnings on the `ntimporters` logger and don't stop the import
+  `NozbeImport` keeps imported projects in the "Imported from <app>" group. Re-runs are safe: projects match by name, sections and tasks by name within their project, comments by body within their task. Shared rules:
+
+  - Limits: projects imported before don't count; sections checked per project as created
+  - Members matched by email; the token owner is the importing user
+  - Recurrence (`recurrence=(rrule, fallback comment)`): set only on a due task
+  - Reminder (`remind_at=` ms): only on a new task
+  - Due task: to its mapped assignee, else to the author (+ "missing responsibility" tag if the source assignee couldn't be mapped)
+  - Task without due date: no responsible person
+  - Single Tasks: the author's
+- Partial failures (one attachment, one tag) are logged as warnings on the `ntimporters` logger; the import goes on
 
 ## Development
 
-Requires [uv](https://docs.astral.sh/uv/) (and Java for regenerating the API client).
+Requires [uv](https://docs.astral.sh/uv/) (and Java to regenerate the API client).
 
 ```sh
 uv sync        # create .venv with all dependencies
@@ -80,7 +86,10 @@ uv run python -c "from ntimporters.todoist import run_import; print(run_import('
 
 ### Nozbe API client
 
-`src/openapi_client` is generated from the backend's OpenAPI spec. Don't edit it by hand: customisations (API version header, dev token, 429 retries) live in `ntimporters.utils.nt_api_client`. To regenerate:
+- `src/openapi_client` is generated from the backend's OpenAPI spec; don't edit it by hand
+- Customisations (API version header, dev token, 429 retries) live in `ntimporters.utils.nt_api_client`
+
+Regenerate:
 
 ```sh
 make client                                               # from production spec (what importers run against)

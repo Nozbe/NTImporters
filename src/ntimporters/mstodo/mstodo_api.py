@@ -1,4 +1,4 @@
-"""Microsoft Graph To Do client (read-only, delegated token with Tasks.Read)"""
+"""Graph To Do client; read-only, delegated token, Tasks.Read"""
 
 from urllib.parse import quote
 
@@ -6,7 +6,7 @@ from ntimporters.utils import ImportException, session
 
 
 class MSTodoClient:
-    """Microsoft To Do lists, tasks and their details via Graph v1.0"""
+    """To Do via Graph v1.0"""
 
     api_path = "https://graph.microsoft.com/v1.0/me/todo"
 
@@ -15,7 +15,7 @@ class MSTodoClient:
         self.session = session(self.headers | {"Prefer": 'outlook.timezone="UTC"'})
 
     def _get_all(self, path: str, **params) -> list[dict]:
-        """All records of collection at path, @odata.nextLink pages followed"""
+        """all records at path; follows @odata.nextLink"""
         records, url = [], f"{self.api_path}/{path}"
         while url:
             response = self.session.get(url, params=params, timeout=60)
@@ -37,24 +37,23 @@ class MSTodoClient:
         return f"lists/{quote(list_id, safe='')}/tasks/{quote(task_id, safe='')}"
 
     def lists(self) -> list[dict]:
-        """Task lists"""
         return self._get_all("lists")
 
     def tasks(self, list_id: str) -> list[dict]:
-        """Tasks of list with checklistItems, linkedResources (key absent if none)"""
+        """tasks + checklistItems, linkedResources (key absent if none)"""
         return self._get_all(
             f"lists/{quote(list_id, safe='')}/tasks",
             **{"$expand": "checklistItems,linkedResources"},
         )
 
     def attachments(self, list_id: str, task_id: str) -> list[dict]:
-        """File attachments of task, without content"""
+        """file attachments, no content"""
         return self._get_all(
             f"{self._task_path(list_id, task_id)}/attachments", **{"$select": "id,name"}
         )
 
     def attachment_url(self, list_id: str, task_id: str, attachment_id: str) -> str:
-        """Raw content URL of attachment; GET needs self.headers"""
+        """raw content URL; GET needs self.headers"""
         return (
             f"{self.api_path}/{self._task_path(list_id, task_id)}"
             f"/attachments/{quote(attachment_id, safe='')}/$value"

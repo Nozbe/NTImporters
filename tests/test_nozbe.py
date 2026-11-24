@@ -15,9 +15,8 @@ OLD, OTHER, NEW, TAG, COMMENT = "o" * 16, "q" * 16, "n" * 16, "x" * 16, "c" * 16
 
 @pytest.fixture
 def nz(nt):
-    """NozbeImport of team: author, Ann, Bob; Single Tasks; grouped project with tasks
-    'Old' (recurring) and OLD, the latter commented 'pic' by author, sections 'S' and archived 'A'.
-    Construction calls forgotten."""
+    """Team: author, Ann, Bob; Single Tasks; grouped project: tasks 'Old' (recurring), OLD
+    (comment 'pic'), sections 'S', archived 'A'. fetch_all reset after construction"""
     nt.records |= {
         "/team_members": [
             {"user_id": "user", "id": AUTHOR},
@@ -48,7 +47,7 @@ def nz(nt):
 
 
 def test_run_safely():
-    """Missing field named, exception returned (Nozbe4Backend reports it), None on success"""
+    """Missing field named; exception returned; None on success"""
     assert run_safely(lambda: None, token="", key="x") == "Missing 'token'"
     assert isinstance(run_safely(lambda: 1 / 0, token="t"), ZeroDivisionError)
     assert run_safely(lambda: None, token="t") is None
@@ -58,9 +57,9 @@ def test_run_safely():
     "project_id, due_at, responsible_id, assigned, expected, tagged",
     [
         (PROJECT, 1, None, True, AUTHOR, True),  # due, assignee not mapped: author + tag
-        (PROJECT, 1, None, False, AUTHOR, False),  # due, unassigned in source: author
+        (PROJECT, 1, None, False, AUTHOR, False),  # due, unassigned: author
         (PROJECT, 1, "m" * 16, True, "m" * 16, False),
-        (PROJECT, None, "m" * 16, True, None, False),  # no due: nobody responsible
+        (PROJECT, None, "m" * 16, True, None, False),  # no due: nobody
         (PROJECT, None, None, True, None, False),
         (SAP, None, "m" * 16, True, AUTHOR, False),  # Single Tasks: always author
     ],
@@ -79,7 +78,7 @@ def test_due_fields_naive_as_utc():
 
 
 def test_task_recurrence_with_due_unless_recurring(nt, nz, monkeypatch):
-    """Set on new task and on one imported before without recurrence, if due"""
+    """If due: set on new task and on imported one without recurrence"""
     monkeypatch.setattr(NozbeImport, "recurrence", recurrence := MagicMock())
     nt.api.TasksApi().post_task.return_value = NS(id=NEW)
     day = date(2026, 1, 1)
@@ -92,7 +91,7 @@ def test_task_recurrence_with_due_unless_recurring(nt, nz, monkeypatch):
 
 
 def test_section_limit_counts_open_sections(nt, nz, monkeypatch):
-    """Existing non-archived sections count; reused and archived ones don't add"""
+    """Existing open sections count; reused, archived ones don't add"""
     nz._limits = {"project_sections": 2}
     monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
     nt.api.ProjectSectionsApi().post_project_section.return_value = NS(id=NEW)
@@ -120,7 +119,7 @@ def test_task_imported_before(nt, nz):
 
 
 def test_members(nz):
-    """Source id -> member by email, case-insensitive; md5(user_id + email) form matched"""
+    """By email, case-insensitive; md5(user_id + email) form too"""
     assert nz.members({"a": "ann@X.com", "b": "Bob@y.com", "c": "nobody@z.com", "d": None}) == {
         "a": "m1",
         "b": "m2",
@@ -130,7 +129,7 @@ def test_members(nz):
 
 @pytest.mark.parametrize("attached, uploads", [([], 1), ([{"id": "f"}], 0)])
 def test_comment_imported_before_reuploads_missing_file(nt, nz, monkeypatch, attached, uploads):
-    """Existing comment: file uploaded only if it has none (run stopped before upload)"""
+    """Existing comment: file uploaded iff it has none"""
     nt.records[f"/comments/{COMMENT}/attachments"] = attached
     monkeypatch.setattr(NozbeImport, "_upload", upload := MagicMock())
     assert nz.comment(OLD, "pic", ("https://f", "pic.png", None)) == COMMENT
@@ -139,7 +138,6 @@ def test_comment_imported_before_reuploads_missing_file(nt, nz, monkeypatch, att
 
 
 def test_check_open_projects_counts_only_new(nz, monkeypatch):
-    """Projects imported before don't count against the open projects limit"""
     nz._limits, nz._team_projects = {"projects_open": 2}, []
     nz.imported["projects"] = {"Home": deque(["h" * 16])}
     monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
@@ -157,8 +155,8 @@ def test_check_limit_missing_is_unlimited(nz, monkeypatch):
 
 
 def test_imported_entities_chain(nt):
-    """Same names under different parents (incl. Single Tasks) stay distinct; under one parent
-    each imported record matches once; only group's data and author's comments fetched"""
+    """Same names, different parents (incl. Single Tasks): distinct; one parent: each record
+    matches once; fetched: group's data, author's comments only"""
     nt.records = {
         "/tasks": [
             {"id": "home-call", "name": "Call mom", "created_at": 2, "project_id": "home"},
@@ -182,7 +180,7 @@ def test_imported_entities_chain(nt):
 
     assert exists("projects", "Work", imported) == "work"
     assert not exists("projects", "Other", imported)  # not in group
-    # same-named tasks matched one by one, in creation order
+    # same names: one match each, by creation order
     assert exists("tasks", "Call mom", imported, "home") == "home-call-1"
     assert exists("tasks", "Call mom", imported, "home") == "home-call"
     assert not exists("tasks", "Call mom", imported, "home")
@@ -194,7 +192,7 @@ def test_imported_entities_chain(nt):
 
 
 def test_task_reminder_unless_task_has_one(nt, nz):
-    """New task: posted, reminders not fetched; imported before: posted if it has none"""
+    """New task: posted, reminders not fetched; imported: posted iff it has none"""
     nt.records["/reminders"] = [{"task_id": "old"}]
     nt.api.TasksApi().post_task.return_value = NS(id=NEW)
     nz.task(PROJECT, "New", remind_at=5)
@@ -215,7 +213,7 @@ def test_task_imported_before_gets_missing_responsibility_tag(nt, nz):
 
 
 def test_tags_visible_in_team_only(nt, nz, monkeypatch):
-    """Other teams' tags neither matched nor counted against team's limit"""
+    """Other teams' tags: not matched, not counted"""
     nt.records["/tags"] = [
         {"id": "t" * 16, "name": "home", "team_id": None},
         {"id": "u" * 16, "name": "work", "team_id": "team"},

@@ -1,4 +1,4 @@
-"""Microsoft To Do -> NT importer"""
+"""Microsoft To Do importer"""
 
 from ntimporters.mstodo.importer import SPEC, run_import
 

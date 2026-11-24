@@ -21,20 +21,19 @@ from ntimporters.todoist.recurrence import to_rrule
 from ntimporters.utils import dig, log, session
 
 SPEC = {
-    "code": "todoist",  # codename / ID of importer
-    "name": "Todoist",  # name of application
+    "code": "todoist",
+    "name": "Todoist",
     "url": "https://nozbe.help/advancedfeatures/importers/#todoist",
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Todoist"
 API_URL = "https://api.todoist.com/api/v1"
 RETRIES = 10
-MAX_WAIT = 300  # s per wait: worst case ~50 min per request
+MAX_WAIT = 300  # s; worst case ~50 min/request
 
 
 class RetryTransport(httpx.HTTPTransport):
-    """HTTPTransport retrying 429/503 up to RETRIES times: waits Retry-After seconds
-    (<= MAX_WAIT) if sent, else 1, 2, 4, ... 60 s"""
+    """429/503: retry <= RETRIES; sleep Retry-After s (<= MAX_WAIT), else 1, 2, 4 .. 60 s"""
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         for attempt in range(RETRIES):
@@ -48,13 +47,13 @@ class RetryTransport(httpx.HTTPTransport):
 
 
 def unpack(paginator) -> list:
-    """Flatten Todoist paginator"""
+    """paginator -> flat list"""
     return list(itertools.chain.from_iterable(paginator))
 
 
 @dataclass(frozen=True)
 class Ctx:
-    """Import-wide state"""
+    """import-wide state; comments: see _comments"""
 
     nz: NozbeImport
     todoist: TodoistAPI
@@ -65,9 +64,9 @@ class Ctx:
     comments: dict[str, list[Comment] | None] | None
 
 
-# main method called by Nozbe app
+# Nozbe app entry point
 def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception | str | None:
-    """Perform import from todoist to Nozbe"""
+    """Todoist -> Nozbe"""
     return run_safely(
         lambda: _import_data(
             NozbeImport(nt_auth_token, team_id, IMPORT_NAME, with_single_tasks=True),
@@ -80,7 +79,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception |
 
 
 def _import_data(nz: NozbeImport, todoist, todoist_token: str):
-    """Import everything from todoist to Nozbe"""
+    """projects, labels, comments, tasks"""
     projects = unpack(todoist.get_projects())
     nz.check_open_projects(project.name for project in projects if not project.is_inbox_project)
     user = _todoist_user(todoist_token)
@@ -98,7 +97,7 @@ def _import_data(nz: NozbeImport, todoist, todoist_token: str):
 
 
 def _todoist_user(token: str) -> dict:
-    """Todoist token owner; {} on failure"""
+    """token owner; {}: request failed"""
     try:
         response = session({"Authorization": f"Bearer {token}"}).get(f"{API_URL}/user", timeout=30)
         response.raise_for_status()
@@ -108,8 +107,7 @@ def _todoist_user(token: str) -> dict:
 
 
 def _comments(token: str) -> dict[str, list[Comment] | None] | None:
-    """Task id -> its comments, from one full sync of notes; deleted skipped;
-    None for tasks the sync marks incomplete, None at all if sync failed (refetch per task)"""
+    """task id -> live comments, one notes sync; value None: incomplete; None: sync failed"""
     try:
         response = session({"Authorization": f"Bearer {token}"}).post(
             f"{API_URL}/sync", data={"sync_token": "*", "resource_types": '["notes"]'}, timeout=60
@@ -127,7 +125,7 @@ def _comments(token: str) -> dict[str, list[Comment] | None] | None:
 
 
 def _import_project(ctx: Ctx, project: Project):
-    """Import todoist project (Inbox into Single Tasks) with its sections and tasks"""
+    """project, sections, tasks; Inbox -> Single Tasks"""
     if project.is_inbox_project:
         nt_project_id, sections = ctx.nz.single_tasks_id, {}
     elif nt_project_id := ctx.nz.project(project.name, is_favorite=project.is_favorite):
@@ -144,7 +142,7 @@ def _import_project(ctx: Ctx, project: Project):
 
 
 def _assignees(ctx: Ctx, project: Project) -> dict[str, str]:
-    """Todoist collaborator id -> NT member id"""
+    """collaborator id -> NT member id; {}: not shared"""
     if not project.is_shared:
         return {}
     collaborators = unpack(ctx.todoist.get_collaborators(project_id=project.id))
@@ -152,17 +150,17 @@ def _assignees(ctx: Ctx, project: Project) -> dict[str, str]:
 
 
 def parse_due(due: Due | None, time_zone: str) -> date | datetime | None:
-    """Due date, or aware datetime (floating one in due/user zone)"""
+    """date | aware datetime; floating -> due zone, else user zone"""
     match due and due.date:
         case datetime() as moment if not moment.tzinfo:
             return moment.replace(tzinfo=_zone(due.timezone or time_zone))
-        case date() as value:  # date or aware datetime
+        case date() as value:  # date | aware datetime
             return value
     return None
 
 
 def _zone(name: str) -> ZoneInfo:
-    """ZoneInfo by name, UTC if unknown"""
+    """UTC if unknown"""
     try:
         return ZoneInfo(name)
     except ZoneInfoNotFoundError, ValueError:
@@ -170,7 +168,7 @@ def _zone(name: str) -> ZoneInfo:
 
 
 def _import_task(ctx: Ctx, task: Task, nt_project_id: str, sections: dict, assignees: dict):
-    """Import todoist task with comments, tags and recurrence"""
+    """task, comments, tags, recurrence"""
     nt_task_id, is_new = ctx.nz.task(
         nt_project_id,
         task.content,
@@ -192,7 +190,7 @@ def _import_task(ctx: Ctx, task: Task, nt_project_id: str, sections: dict, assig
 
 
 def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
-    """Import description and comments with attachments"""
+    """description, comments by posted_at, attachments; per-task fetch if not synced"""
     if task.description:
         ctx.nz.comment(nt_task_id, task.description)
     comments = None if ctx.comments is None else ctx.comments.get(task.id, [])
@@ -206,12 +204,12 @@ def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
 
 
 def _file_name(attachment: Attachment | None) -> str | None:
-    """Attachment file name, without path (also comment body: kept as in earlier imports)"""
+    """basename; also empty comment body (as earlier imports)"""
     return attachment and Path(attachment.file_name or attachment.title or "attachment").name
 
 
 def _file(ctx: Ctx, attachment: Attachment | None) -> File | None:
-    """(url, name, headers) of todoist file attachment; token sent to todoist only"""
+    """(url, name, headers); token only to *.todoist.com"""
     if not (attachment and attachment.file_url):
         return None
     host = urlparse(attachment.file_url).hostname or ""

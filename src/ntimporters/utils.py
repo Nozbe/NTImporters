@@ -1,4 +1,4 @@
-"""Common helper functions"""
+"""Shared helpers: HTTP sessions, NT client, parsing"""
 
 import logging
 import random
@@ -26,7 +26,7 @@ MAX_RETRY_AFTER = 300  # s
 
 
 class CappedRetry(Retry):
-    """Retry honouring Retry-After up to MAX_RETRY_AFTER seconds"""
+    """Retry-After capped at MAX_RETRY_AFTER s"""
 
     def get_retry_after(self, response):
         after = super().get_retry_after(response)
@@ -34,9 +34,8 @@ class CappedRetry(Retry):
 
 
 def session(headers: dict, statuses=(429, 500, 502, 503, 504)) -> requests.Session:
-    """Session sending headers; statuses and connection errors retried up to 10 times,
-    waiting Retry-After (<= MAX_RETRY_AFTER) if sent, else backoff (0, 2, 4, ... 60 s).
-    Any method retried: for read-only clients only."""
+    """statuses + connection errors: <= 10 retries, Retry-After (<= MAX_RETRY_AFTER) else
+    backoff 0, 2, 4 .. 60 s; any method retried: read-only clients only"""
     sess = requests.Session()
     sess.headers.update(headers)
     retry = CappedRetry(
@@ -53,17 +52,16 @@ def session(headers: dict, statuses=(429, 500, 502, 503, 504)) -> requests.Sessi
 
 
 class NozbeRetry(CappedRetry):
-    """CappedRetry retrying forced statuses (429) for any method; read errors only for
-    idempotent methods (a replayed POST would duplicate)"""
+    """forced statuses (429) retried for any method; read errors idempotent only
+    (replayed POST duplicates)"""
 
     def is_retry(self, method, status_code, has_retry_after=False):
         return bool(self.status_forcelist and status_code in self.status_forcelist)
 
 
 def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
-    """NT API client: current API version, dev token; 429 retried up to 36 times (first at
-    once, then every 10 s or Retry-After <= MAX_RETRY_AFTER); GET/PUT/DELETE read and
-    connection errors retried 3 times, POST connection errors only"""
+    """429: <= 36 retries, first at once, then 10 s or Retry-After (<= MAX_RETRY_AFTER);
+    connect errors 3x; read errors 3x, not POST"""
     configuration = nt.Configuration(
         host=API_HOST,
         api_key={"ApiKeyAuth": nt_auth_token},
@@ -88,7 +86,7 @@ def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
 
 
 def dig(data, path: str, default=None):
-    """Value at dotted path ("data.boards.0.groups"), default if missing or None"""
+    """value at dotted path ("data.boards.0.groups"); default if missing or None"""
     for key in path.split("."):
         match data:
             case dict():
@@ -101,7 +99,7 @@ def dig(data, path: str, default=None):
 
 
 def id16():
-    """Generate random string"""
+    """random 16 chars [A-Za-z0-9]"""
     return "".join(random.choices(string.ascii_letters + string.digits, k=16))
 
 
@@ -115,7 +113,7 @@ def checklist(items: Iterable[tuple[str | None, bool]]) -> str:
 
 
 def subscribe_trial(api_key: str, nt_team_id: str) -> bool:
-    """Return True if trial has been subscribed"""
+    """True iff trial subscribed"""
     resp = requests.patch(
         "/".join((API_HOST.removesuffix("/api"), "teams", nt_team_id, "plan")),
         json={"members_len": 1, "plan_type": "trial", "is_recurring": False, "creds": 0},
@@ -126,13 +124,13 @@ def subscribe_trial(api_key: str, nt_team_id: str) -> bool:
 
 
 def map_color(color: str | None) -> Color:
-    """Maps color onto Nozbe color"""
+    """color if a Nozbe color, else random one"""
     colors = [elt.value for elt in Color if elt.value != "null"]
     return Color(color if color in colors else random.choice(colors))  # nosec
 
 
 def trim(name: str | None) -> str:
-    """First 255 characters, "Untitled" if empty"""
+    """name[:255]; "Untitled" if empty"""
     return (name or "")[:255] or "Untitled"
 
 

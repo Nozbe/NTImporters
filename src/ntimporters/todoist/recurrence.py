@@ -57,23 +57,22 @@ LANGS = {"en", "pl"}
 
 
 def to_rrule(text: str | None, lang: str | None = "en") -> str | None:
-    """Todoist due.string in due.lang -> RRULE without DTSTART; None if unrecognised or
-    repeating after completion ("every!": no RRULE equivalent)"""
+    """due.string, due.lang -> RRULE sans DTSTART; None: unrecognised or "every!" (no RRULE)"""
     if lang not in LANGS or "!" in (text or "") or not (rule := _rule(text)):
         return None
     text = f" {text.lower()} "
     if until := UNTIL.search(text):
         return f"{rule};UNTIL={''.join(until.groups())}"
-    # end not given as ISO date ("until feb 28", "for 3 weeks"): unbounded rule would be wrong
+    # non-ISO end ("until feb 28", "for 3 weeks"): unbounded rule would be wrong
     return None if END.search(text) else rule
 
 
 def _rule(text: str | None) -> str | None:
-    """RRULE FREQ/INTERVAL/BY* part of due.string"""
+    """due.string -> FREQ/INTERVAL/BY* part"""
     text = TAIL.sub("", f" {(text or '').lower()} ")
     tokens = [t for t in re.split(r"[\s,]+", NOISE.sub(" ", text)) if t and t not in FILLER]
     interval = 1
-    # number is an interval only before a unit word: "27 jan", "1, 15" are dates
+    # number = interval only before unit word: "27 jan", "1, 15" are dates
     if len(tokens) > 1 and (
         n := int(tokens[0])
         if tokens[0].isdigit() and (tokens[1] in FREQ or tokens[1] in QUARTER)
@@ -87,7 +86,7 @@ def _rule(text: str | None) -> str | None:
         return f"FREQ={freq}{every}"
     if phrase in QUARTER:
         return f"FREQ=MONTHLY;INTERVAL={3 * interval}"
-    # "every 2 weeks on monday", "every month on the 5th": unit word before BY* part
+    # unit word before BY*: "every 2 weeks on monday", "every month on the 5th"
     unit = FREQ.get(tokens[0]) if len(tokens) > 1 else None
     if unit in ("WEEKLY", "MONTHLY"):
         tokens = tokens[1:]

@@ -1,4 +1,4 @@
-"""Simple trello REST API client"""
+"""Trello REST client"""
 
 import itertools
 from collections import defaultdict
@@ -10,15 +10,11 @@ BATCH_LIMIT = 10  # API maximum
 BOARD_NESTED = "lists=all&labels=all&labels_limit=1000&members=all"
 CARD_FIELDS = "name,desc,due,dueComplete,idList,idMembers,labels,pos"
 
-# board -> project
-# list ->  section
-# card -> task
-# comment -> comment
-# checklist -> comment
+# board -> project, list -> section, card -> task, comment/checklist -> comment
 
 
 class TrelloClient:
-    """Simple trello REST API client"""
+    """Trello REST API v1"""
 
     api_path = "https://api.trello.com/1"
 
@@ -32,7 +28,7 @@ class TrelloClient:
         self.boards_ids = user_data.get("idBoards", [])
 
     def _req(self, suffix) -> dict:
-        """JSON at api_path/suffix; ImportException on failure"""
+        """GET api_path/suffix -> JSON; ImportException on failure"""
         resp = self.session.get(f"{self.api_path}/{suffix}", timeout=60)
         if resp.status_code in (401, 403):
             raise ImportException("Trello: wrong credentials (API key or token)")
@@ -41,7 +37,7 @@ class TrelloClient:
         return resp.json()
 
     def projects(self) -> list[dict]:
-        """Boards with lists, labels, members; is_fav if starred by me"""
+        """boards + lists, labels, members; is_fav: starred by me"""
         starred = {star.get("idBoard") for star in self._req("members/me/boardStars")}
         return [
             self._req(f"boards/{board_id}?{BOARD_NESTED}") | {"is_fav": board_id in starred}
@@ -49,8 +45,8 @@ class TrelloClient:
         ]
 
     def members_emails(self, boards: list[dict]) -> dict:
-        """Member id -> email, other boards' members; batches of BATCH_LIMIT
-        (email only on members/{id}), failed entry refetched alone"""
+        """member id -> email, boards' members but me; email only via members/{id},
+        batched by BATCH_LIMIT, failed entry refetched alone"""
         member_ids = {
             member.get("id") for board in boards for member in board.get("members") or []
         } - {self.author_id}
@@ -63,7 +59,7 @@ class TrelloClient:
         return emails
 
     def tasks(self, board_id: str) -> dict[str, list[dict]]:
-        """List id (archived lists too) -> its open cards by pos, with checklists and attachments"""
+        """list id -> open cards by pos (archived lists too), + checklists, attachments"""
         lists = defaultdict(list)
         for card in sorted(
             self._req(
@@ -75,7 +71,7 @@ class TrelloClient:
         return lists
 
     def comments(self, board_id: str) -> dict[str, list[str]]:
-        """Card id -> comment texts, oldest first"""
+        """card id -> comment texts, oldest first"""
         actions, before = [], ""
         while page := self._req(
             f"boards/{board_id}/actions?filter=commentCard&limit={ACTIONS_LIMIT}{before}"
@@ -91,7 +87,7 @@ class TrelloClient:
 
 
 def checklists(card: dict) -> list[str]:
-    """Card checklists as markdown task lists"""
+    """checklists -> markdown task lists"""
     return [
         checklist(
             (item.get("name"), item.get("state") != "incomplete")

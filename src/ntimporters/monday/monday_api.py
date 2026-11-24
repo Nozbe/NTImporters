@@ -1,4 +1,4 @@
-"""Monday API client module"""
+"""Monday GraphQL client"""
 
 import itertools
 import time
@@ -8,12 +8,12 @@ from ntimporters.utils import ImportException, dig, session
 
 UPDATE_FIELDS = "id created_at text_body replies { created_at text_body }"
 RATE_LIMITED = {"COMPLEXITY_BUDGET_EXHAUSTED", "RATE_LIMIT_EXCEEDED", "IP_RATE_LIMIT_EXCEEDED"}
-RETRIES = 30  # with <= 60 s waits: Monday budgets reset per minute
-COST_MARGIN = 2  # pause when remaining budget is below this many last-query costs
+RETRIES = 30  # waits <= 60 s; budgets reset per minute
+COST_MARGIN = 2  # pause if budget left < this * last query cost
 
 
 class MondayClient:
-    """Client to connect to Monday API"""
+    """Monday API v2"""
 
     api_path = "https://api.monday.com/v2"
     limit = 300
@@ -22,15 +22,13 @@ class MondayClient:
 
     def __init__(self, app_key):
         self.headers = {"Authorization": app_key}
-        # 429 left to _req: its body's retry_in_seconds is the right wait
+        # 429 handled in _req: wait = body's retry_in_seconds
         self.session = session(self.headers, statuses=(500, 502, 503, 504))
-        self._resume_at = 0.0  # monotonic time before which the budget is too low
+        self._resume_at = 0.0  # monotonic; budget too low until then
 
     def _req(self, query) -> dict:
-        """Response of GraphQL query. Paced: if the budget left after a query is below
-        COST_MARGIN times its cost, the next waits for the budget reset. Rate limits waited
-        out (retry_in_seconds, up to RETRIES times); ImportException on daily limit and
-        other HTTP or GraphQL errors"""
+        """query -> response. Budget left < COST_MARGIN * cost: next call waits for reset.
+        Rate limits waited out (<= RETRIES); ImportException: daily limit, other errors"""
         for _ in range(RETRIES):
             if (wait := self._resume_at - time.monotonic()) > 0:
                 time.sleep(wait)
@@ -41,7 +39,7 @@ class MondayClient:
             )
             try:
                 data = resp.json() if resp.content else {}
-            except ValueError:  # e.g. HTML error page: reported by status below
+            except ValueError:  # e.g. HTML error page; status check reports it
                 data = {}
             error = dig(data, "errors.0", {})
             code = dig(error, "extensions.code")
@@ -61,7 +59,7 @@ class MondayClient:
         raise ImportException("Monday API: rate limit not lifted")
 
     def _paged(self, query: Callable[[int], str], path: str) -> list[dict]:
-        """All records at path of query(page), pages 1.. until a short one"""
+        """records at path of query(page), pages 1.. until short"""
         records = []
         for page in itertools.count(1):
             records += (batch := dig(self._req(query(page)), path, []))
@@ -69,7 +67,7 @@ class MondayClient:
                 return records
 
     def projects(self) -> list[dict]:
-        """Get Monday boards (NT projects); sub-items boards and docs skipped"""
+        """boards; subitem boards, docs skipped"""
         return [
             board
             for board in self._paged(
@@ -83,7 +81,7 @@ class MondayClient:
         ]
 
     def _updates(self, raw: dict) -> list[dict]:
-        """Updates of item raw; refetched in full if its nested ones hit the limit"""
+        """updates of raw; refetched paged if nested ones hit updates_limit"""
         updates = raw.get("updates") or []
         if len(updates) < self.updates_limit:
             return updates
@@ -96,8 +94,7 @@ class MondayClient:
         )
 
     def board(self, project_id: str) -> tuple[list[dict], list[dict]]:
-        """(groups, items) of board, items in board order; items and their subitems
-        carry all their updates"""
+        """(groups, items in board order); items, subitems carry all updates"""
         page_args = f"limit:{self.page_limit}"
         item_fields = (
             "id name column_values { id type text value }"
@@ -127,11 +124,11 @@ class MondayClient:
         return board.get("groups") or [], items
 
     def me_id(self) -> str | None:
-        """Monday id of token owner"""
+        """id of token owner"""
         return dig(self._req("me {id}"), "data.me.id")
 
     def users(self) -> dict:
-        """Get Monday users"""
+        """user id -> email; emailless skipped"""
         return {
             elt.get("id"): email
             for elt in dig(self._req("users {id email}"), "data.users", [])

@@ -27,7 +27,7 @@ def test_req_raises(status, payload, message):
 
 
 def test_req_waits_out_rate_limit(monkeypatch):
-    """429 / exhausted budget: wait retry_in_seconds, then retry"""
+    """429, budget exhausted: retried after retry_in_seconds"""
     limited = {
         "errors": [{"extensions": {"code": "COMPLEXITY_BUDGET_EXHAUSTED", "retry_in_seconds": 7}}]
     }
@@ -41,7 +41,7 @@ def test_req_waits_out_rate_limit(monkeypatch):
 
 
 def test_req_paces_on_low_budget(monkeypatch):
-    """Budget left below COST_MARGIN x query cost: next request waits for the reset"""
+    """Budget < COST_MARGIN x query cost: next request waits for reset"""
 
     def response(after):
         complexity = {"query": 100, "after": after, "reset_in_x_seconds": 30}
