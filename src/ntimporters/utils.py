@@ -97,7 +97,7 @@ class Dict(UserDict):
 
 
 def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
-    """Get already imported records"""
+    """Get already imported records; "*_by_project": by (project_id, name)"""
     already_imported = []
     if group_id := get_group_id(nt_client, team_id, group_name):
         for pgroup in api.GroupAssignmentsApi(nt_client).get_group_assignments(
@@ -125,6 +125,12 @@ def get_imported_entities(nt_client, team_id, group_name) -> dict[str, list]:
     for rtype in ("task", "tag", "project", "project_section"):
         entities[f"{rtype}s"] = {
             str(elt[1].name): Dict({"id": elt[1].id}) for elt in already_imported if elt[0] == rtype
+        }
+    for rtype in ("task", "project_section"):
+        entities[f"{rtype}s_by_project"] = {
+            (str(elt[1].project_id), str(elt[1].name)): Dict({"id": elt[1].id})
+            for elt in already_imported
+            if elt[0] == rtype
         }
     return entities
 

@@ -1,12 +1,20 @@
 """Todoist -> Nozbe importer"""
 
 import functools
-from dataclasses import dataclass
+import json
+import shutil
+import tempfile
+from datetime import UTC, date, datetime, time
+from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import openapi_client as nt
+import requests
 from dateutil.parser import isoparse
 from ntimporters.rate_limiting import RLProxy
+from ntimporters.todoist.recurrence import to_rrule
 from ntimporters.utils import (
     add_to_project_group,
     check_limits,
@@ -24,8 +32,9 @@ from ntimporters.utils import (
     trim,
 )
 from openapi_client import models, api
-from openapi_client.exceptions import OpenApiException
+from openapi_client.exceptions import ApiException, OpenApiException
 from todoist_api_python.api import TodoistAPI
+from todoist_api_python.models import Attachment, Due
 
 import itertools
 
@@ -41,6 +50,7 @@ SPEC = {
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Todoist"
+API_URL = "https://api.todoist.com/api/v1"
 
 
 # main method called by Nozbe app
@@ -63,13 +73,16 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Optional[Ex
             RLProxy(TodoistAPI(auth_token)),
             team_id,
             nt_auth_token,
+            auth_token,
         )
     except Exception as exc:
         return exc
     return None
 
 
-def _import_data(nt_client: nt.ApiClient, todoist_client, team_id: str, nt_auth_token: str):
+def _import_data(
+    nt_client: nt.ApiClient, todoist_client, team_id: str, nt_auth_token: str, todoist_token: str
+):
     """Import everything from todoist to Nozbe"""
     nt_project_api = api.ProjectsApi(nt_client)
     single_tasks_id = get_single_tasks_project_id(nt_client, team_id)
@@ -117,6 +130,7 @@ def _import_data(nt_client: nt.ApiClient, todoist_client, team_id: str, nt_auth_
             nt_auth_token,
             is_sap=nt_project_id == single_tasks_id,
             imported=imported,
+            todoist_token=todoist_token,
         )
 
     todoist_projects = unpack(todoist_client.get_projects())
@@ -168,6 +182,7 @@ def _import_project_sections(
     nt_auth_token: str,
     is_sap: bool = False,
     imported=None,
+    todoist_token: str = "",
 ):
     """Import todoist lists as project sections"""
     nt_api_sections = api.ProjectSectionsApi(nt_client)
@@ -177,8 +192,9 @@ def _import_project_sections(
     if project.name != "Inbox":
         for section in unpack(todoist_client.get_sections(project_id=project.id)):
             try:
+                name = trim(section.name)
                 if nt_section := exists(
-                    "project_sections", name := trim(section.name), imported
+                    "project_sections_by_project", (nt_project_id, name), imported
                 ) or nt_api_sections.post_project_section(
                     models.ProjectSection(
                         id=id16(),
@@ -202,6 +218,7 @@ def _import_project_sections(
         nt_auth_token,
         is_sap,
         imported=imported,
+        todoist_token=todoist_token,
     )
 
 
@@ -216,25 +233,12 @@ def _import_tasks(
     nt_auth_token,
     is_sap: bool = False,
     imported=None,
+    todoist_token: str = "",
 ):
     nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
     nt_api_tasks = api.TasksApi(nt_client)
     tags_mapping = _import_tags(nt_client, todoist_client, team_id, nt_auth_token)
     author_id = nt_members[1]
-
-    def _parse_timestamp(todoist_date):
-        """Parses todoist timestamp into NT timestamp format"""
-        if isinstance(todoist_date, str):
-            return int(isoparse(todoist_date).timestamp() * 1000), len(todoist_date) == 10
-
-        if not todoist_date or not any((todoist_date.get("date"), todoist_date.get("datetime"))):
-            return None, False
-        return (
-            int(
-                isoparse(todoist_date.get("datetime") or todoist_date.get("date")).timestamp() * 1000
-            ),
-            todoist_date.get("datetime", None) is None,
-        )
 
     def _get_responsible_id(task: dict):
         """Get NT responsible_id given todoist assignee id"""
@@ -251,14 +255,13 @@ def _import_tasks(
 
         return should_set_tag, responsible_id
 
-    for task in [
-        task.to_dict() for task in unpack(todoist_client.get_tasks(project_id=to_project_id))
-    ]:
-        due_at, is_all_day = _parse_timestamp(task.get("due"))
+    for todoist_task in unpack(todoist_client.get_tasks(project_id=to_project_id)):
+        task = todoist_task.to_dict()
+        due_at, is_all_day = parse_due(todoist_task.due, _time_zone(nt_client, todoist_token))
         should_set_tag, responsible_id = _get_responsible_id(task)
-        if nt_task := exists(
-            "tasks", name := trim(task.get("content", "")), imported
-        ) or nt_api_tasks.post_task(
+        name = trim(task.get("content", ""))
+        existing = exists("tasks_by_project", (nt_project_id, name), imported)
+        if nt_task := existing or nt_api_tasks.post_task(
             models.Task(
                 id=id16(),
                 is_followed=False,
@@ -275,18 +278,25 @@ def _import_tasks(
                 due_at=due_at,
                 is_all_day=is_all_day,
                 responsible_id=responsible_id,
-                ended_at=_parse_timestamp(task.get("completed_at"))[0],
+                ended_at=_parse_timestamp(task.get("completed_at")),
             )
         ):
             if not is_sap and should_set_tag:
                 set_unassigned_tag(nt_client, nt_task.id)
+            due = todoist_task.due
+            # imported task: due may be wrong (all day), recurrence would repeat it
+            if not existing and due and due.is_recurring and not task.get("completed_at"):
+                _set_recurrence(
+                    nt_client, nt_project_id, str(nt_task.id), due, is_all_day, author_id
+                )
             try:
                 _import_comments(
                     nt_client,
                     todoist_client,
                     str(nt_task.id),
                     task,
-                    imported=imported,
+                    todoist_token,
+                    is_new=not existing,
                     author_id=author_id,
                 )
                 _import_tags_assignments(
@@ -343,27 +353,105 @@ def _import_tags(nt_client, todoist_client, team_id: str, nt_auth_token: str) ->
     return nt_tags
 
 
-@dataclass
-class Comment:
-    """Fake Todoist comment class"""
-
-    content: str
+def _parse_timestamp(value) -> int | None:
+    """ISO string -> ms"""
+    return int(isoparse(value).timestamp() * 1000) if isinstance(value, str) and value else None
 
 
-def _import_comments(
-    nt_client, todoist_client, nt_task_id: str, task: dict, imported=None, author_id=None
-):
-    """Import task-related comments"""
-    nt_api_comments = api.CommentsApi(nt_client)
+def _zone(name: str | None) -> ZoneInfo:
+    """UTC if unknown"""
+    try:
+        return ZoneInfo(name or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
 
-    comments = sorted(
-        unpack(todoist_client.get_comments(task_id=task.get("id"))), key=lambda elt: elt.posted_at
+
+@functools.cache
+def _time_zone(nt_client, todoist_token: str) -> str:
+    """Todoist user's time zone, else Nozbe user's, else UTC"""
+    try:
+        response = requests.get(
+            f"{API_URL}/user", headers={"Authorization": f"Bearer {todoist_token}"}, timeout=30
+        )
+        response.raise_for_status()
+        if name := (response.json().get("tz_info") or {}).get("timezone"):
+            return name
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        print(exc)
+    try:
+        user = api.UsersApi(nt_client).get_user_by_id(nt_client.configuration.username)
+        return getattr(user, "time_zone", None) or "UTC"
+    except OpenApiException as exc:
+        print(exc)
+    return "UTC"
+
+
+def parse_due(due: Due | None, time_zone: str) -> tuple[int | None, bool]:
+    """(due_at ms, is_all_day); date: UTC midnight; floating time: due zone, else time_zone"""
+    match due and due.date:
+        case datetime() as moment:
+            if not moment.tzinfo:
+                moment = moment.replace(tzinfo=_zone(due.timezone or time_zone))
+            return int(moment.timestamp() * 1000), False
+        case date() as day:
+            return int(datetime.combine(day, time(), UTC).timestamp() * 1000), True
+    return None, False
+
+
+def _call(nt_client, method: str, path: str, body: dict) -> dict:
+    """JSON body to Nozbe API path -> JSON reply; ApiException unless 2xx (client has no
+    task recurrences, its Task needs all fields)"""
+    response = nt_client.call_api(
+        *nt_client.param_serialize(
+            method,
+            path,
+            body=body,
+            header_params={"Accept": "application/json", "Content-Type": "application/json"},
+            auth_settings=["ApiKeyAuth"],
+        )
     )
-    if task.get("description"):
-        comments.insert(0, Comment(content=task.get("description")))
-    for comment in comments:
-        if not exists("comments", body := str(comment.content or "…"), imported):
-            nt_api_comments.post_comment(
+    response.read()
+    if not 200 <= response.status < 300:
+        raise ApiException(status=response.status, reason=response.reason, body=response.data)
+    return json.loads(response.data or "{}")
+
+
+def _set_recurrence(
+    nt_client, nt_project_id: str, nt_task_id: str, due: Due, is_all_day: bool, author_id
+):
+    """RRULE of recurring due on task; unrecognised or refused: due string as comment"""
+    if pattern := to_rrule(due.string, due.lang):
+        try:
+            recurrence_id = _call(
+                nt_client,
+                "POST",
+                "/task_recurrences",
+                {
+                    "id": id16(),
+                    "project_id": nt_project_id,
+                    "current_task_id": nt_task_id,
+                    "pattern": pattern,
+                },
+            ).get("id")
+            # only fields sent are changed; is_all_day reset unless sent
+            _call(
+                nt_client,
+                "PUT",
+                f"/tasks/{nt_task_id}",
+                {"recurrence_id": recurrence_id, "is_all_day": is_all_day},
+            )
+            return
+        except OpenApiException as exc:
+            print(exc)
+    _post_comment(nt_client, nt_task_id, f"Todoist: {due.string}", author_id)
+
+
+def _post_comment(nt_client, nt_task_id: str, body: str, author_id) -> str | None:
+    """id of posted comment; None (printed) if refused"""
+    try:
+        return str(
+            api.CommentsApi(nt_client)
+            .post_comment(
                 models.Comment(
                     is_team=False,
                     is_pinned=False,
@@ -374,3 +462,70 @@ def _import_comments(
                     extra="",
                 )
             )
+            .id
+        )
+    except (OpenApiException, ValueError, AttributeError) as exc:
+        print(exc)
+    return None
+
+
+def _comment_entries(task: dict, comments: list) -> list[tuple[str, Attachment | None]]:
+    """(body, file attachment): description, then comments by posted_at; body as earlier
+    imports ('…' if empty), except link only: link; link not in body: own entry"""
+    entries = [(task.get("description"), None)] if task.get("description") else []
+    for comment in sorted(comments, key=lambda elt: elt.posted_at):
+        attachment = comment.attachment
+        file = attachment if attachment and attachment.file_url else None
+        url = attachment and not file and attachment.url
+        if comment.content or file or not url:
+            entries.append((comment.content or "…", file))
+        if url and url not in (comment.content or ""):
+            entries.append((url, None))
+    return entries
+
+
+def _import_comments(
+    nt_client, todoist_client, nt_task_id: str, task: dict, todoist_token: str, is_new, author_id
+):
+    """comments + files; imported task: missing ones (body match, author's) and missing files"""
+    existing = (
+        {}
+        if is_new
+        else {
+            str(elt.body): str(elt.id)
+            for elt in api.CommentsApi(nt_client).get_comments(task_id=nt_task_id)
+            if str(elt.author_id) == str(author_id)
+        }
+    )
+    comments = unpack(todoist_client.get_comments(task_id=task.get("id")))
+    for body, file in _comment_entries(task, comments):
+        if comment_id := existing.get(body):
+            if file and not api.AttachmentsApi(nt_client).getattachments(comment_id):
+                _upload(nt_client, comment_id, file, todoist_token)
+        elif (comment_id := _post_comment(nt_client, nt_task_id, body, author_id)) and file:
+            _upload(nt_client, comment_id, file, todoist_token)
+
+
+def _upload(nt_client, comment_id: str, attachment: Attachment, todoist_token: str):
+    """Todoist file -> attachment of comment; token only to *.todoist.com; failure printed"""
+    host = urlparse(attachment.file_url).hostname or ""
+    is_todoist = host == "todoist.com" or host.endswith(".todoist.com")
+    name = Path(attachment.file_name or attachment.title or "").name
+    try:
+        with (
+            requests.get(
+                attachment.file_url,
+                headers={"Authorization": f"Bearer {todoist_token}"} if is_todoist else None,
+                timeout=120,
+                stream=True,
+            ) as response,
+            tempfile.TemporaryDirectory() as tmp,
+        ):
+            response.raise_for_status()
+            response.raw.decode_content = True
+            path = Path(tmp, name if name not in ("", ".", "..") else "attachment")
+            with path.open("wb") as file:
+                shutil.copyfileobj(response.raw, file)
+            api.AttachmentsApi(nt_client).postattachment_by_id_content2(comment_id, file=str(path))
+    except (requests.RequestException, OpenApiException, OSError) as exc:
+        print(exc)
