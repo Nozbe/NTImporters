@@ -6,3 +6,6 @@ requires = [
 build-backend = "setuptools.build_meta"
 [tool.ruff]
 exclude = ["src/openapi_client/**"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]  # ruff's former defaults; newer ruff enables many more rules
