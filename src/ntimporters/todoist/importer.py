@@ -8,7 +8,6 @@ from datetime import date, datetime
 from operator import attrgetter
 from pathlib import Path
 from urllib.parse import urlparse
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 import requests
@@ -18,7 +17,7 @@ from todoist_api_python.models import Attachment, Comment, Due, Project, Task
 
 from ntimporters.nozbe import File, NozbeImport, run_safely
 from ntimporters.todoist.recurrence import to_rrule
-from ntimporters.utils import dig, log, session
+from ntimporters.utils import dig, log, session, zone
 
 SPEC = {
     "code": "todoist",
@@ -153,18 +152,10 @@ def parse_due(due: Due | None, time_zone: str) -> date | datetime | None:
     """date | aware datetime; floating -> due zone, else user zone"""
     match due and due.date:
         case datetime() as moment if not moment.tzinfo:
-            return moment.replace(tzinfo=_zone(due.timezone or time_zone))
+            return moment.replace(tzinfo=zone(due.timezone or time_zone))
         case date() as value:  # date | aware datetime
             return value
     return None
-
-
-def _zone(name: str) -> ZoneInfo:
-    """UTC if unknown"""
-    try:
-        return ZoneInfo(name)
-    except ZoneInfoNotFoundError, ValueError:
-        return ZoneInfo("UTC")
 
 
 def _import_task(ctx: Ctx, task: Task, nt_project_id: str, sections: dict, assignees: dict):
@@ -197,14 +188,17 @@ def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
     if comments is None:
         comments = unpack(ctx.todoist.get_comments(task_id=task.id))
     for comment in sorted(comments, key=attrgetter("posted_at")):
-        body, attachment = comment.content, comment.attachment
-        if attachment and not attachment.file_url and attachment.url and attachment.url not in body:
-            body = f"{body}\n{attachment.url}".strip()
-        ctx.nz.comment(nt_task_id, body or _file_name(attachment), _file(ctx, attachment))
+        attachment, file = comment.attachment, _file(ctx, comment.attachment)
+        url = attachment and not attachment.file_url and attachment.url
+        if comment.content or file or not url:
+            # body as earlier imports ('…' if empty), so re-runs match them
+            ctx.nz.comment(nt_task_id, comment.content, file)
+        if url and url not in (comment.content or ""):
+            ctx.nz.comment(nt_task_id, url)
 
 
 def _file_name(attachment: Attachment | None) -> str | None:
-    """basename; also empty comment body (as earlier imports)"""
+    """basename"""
     return attachment and Path(attachment.file_name or attachment.title or "attachment").name
 
 

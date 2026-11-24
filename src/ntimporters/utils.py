@@ -6,6 +6,7 @@ import string
 from collections.abc import Iterable
 from datetime import UTC
 from os import getenv
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from dateutil.parser import isoparse
@@ -140,3 +141,11 @@ def parse_timestamp(datetime: str | None) -> int | None:
         return None
     moment = isoparse(datetime)
     return int((moment if moment.tzinfo else moment.replace(tzinfo=UTC)).timestamp() * 1000)
+
+
+def zone(name: str) -> ZoneInfo:
+    """UTC if unknown"""
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError, ValueError:
+        return ZoneInfo("UTC")

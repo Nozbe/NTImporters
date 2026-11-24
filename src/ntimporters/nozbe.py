@@ -75,11 +75,12 @@ def get_imported_entities(
     group_id: str | None,
     author_id: str,
     team_projects: list[dict],
-    single_tasks_id: str | None = None,
+    single_tasks: tuple[str, set[str]] | None = None,
 ) -> dict[str, dict]:
-    """ids of group's (+ Single Tasks') entities, creation order: projects by name; sections,
-    tasks by (project_id, name); comments by author_id by (task_id, body);
-    'open_sections': project_id -> non-archived count; 'recurring': task ids"""
+    """ids of group's (+ Single Tasks' imported) entities, creation order: projects by name;
+    sections, tasks by (project_id, name); comments by author_id by (task_id, body);
+    'open_sections': project_id -> non-archived count; 'recurring': task ids.
+    single_tasks: (Single Tasks id, ids of tasks imported there)"""
     imported = {
         kind: defaultdict(deque) for kind in ("projects", "project_sections", "tasks", "comments")
     } | {"open_sections": Counter(), "recurring": set()}
@@ -88,10 +89,17 @@ def get_imported_entities(
         for record in sorted(records, key=lambda elt: elt.get("created_at") or 0):
             imported.get(kind)[key(record)].append(record.get("id"))
 
-    def _add_tasks(project_id: str) -> set[str]:
-        tasks = fetch_all(
-            nt_client, "/tasks", project_id=project_id, fields="id,name,created_at,recurrence_id"
-        )
+    def _add_tasks(project_id: str, only: set[str] | None = None) -> set[str]:
+        tasks = [
+            elt
+            for elt in fetch_all(
+                nt_client,
+                "/tasks",
+                project_id=project_id,
+                fields="id,name,created_at,recurrence_id",
+            )
+            if only is None or elt.get("id") in only
+        ]
         _add("tasks", tasks, lambda elt: (project_id, elt.get("name")))
         imported.get("recurring").update(elt.get("id") for elt in tasks if elt.get("recurrence_id"))
         return {elt.get("id") for elt in tasks}
@@ -126,8 +134,8 @@ def get_imported_entities(
             not elt.get("archived_at") for elt in sections
         )
         task_ids |= _add_tasks(project_id)
-    if single_tasks_id:
-        task_ids |= _add_tasks(single_tasks_id)
+    if single_tasks and single_tasks[1]:
+        task_ids |= _add_tasks(*single_tasks)
     if task_ids:
         _add(
             "comments",
@@ -177,14 +185,15 @@ class NozbeImport:
         }
         self.author_id = self._member_ids.get(self.client.configuration.username) or id16()
         self.group_id = get_group_id(self.client, team_id, group_name)
+        self._tagged = {}  # tag id -> ids of tasks having it
+        mark = self._tags.get(group_name) if with_single_tasks else None
         self.imported = get_imported_entities(
             self.client,
             self.group_id,
             self.author_id,
             self._team_projects,
-            self.single_tasks_id if with_single_tasks else None,
+            (self.single_tasks_id, self._tasks_tagged(mark)) if mark else None,
         )
-        self._tagged = {}  # tag id -> ids of tasks having it
         self._trial = False
 
     def _post(self, what: str, call: Callable[[], object]) -> str | None:
@@ -385,7 +394,8 @@ class NozbeImport:
         """(id, is_new) of task by name in project; created if missing.
         due: see due_fields. responsible: Single Tasks -> author; no due -> None; unmapped ->
         author (+ 'missing responsibility' tag if assigned).
-        recurrence: (RRULE pattern, fallback comment), due only. remind_at: ms, absolute.
+        recurrence: (RRULE pattern, fallback comment), open + due only. remind_at: ms, absolute.
+        New Single Task: tagged group_name.
         Imported task: only missing tag, recurrence, reminder added (run may stop after post)."""
         due_at, is_all_day = due_fields(due)
         missing_responsible = False
@@ -422,9 +432,16 @@ class NozbeImport:
             )
             if not task_id:
                 return None, False
+            if project_id == self.single_tasks_id:  # marks it imported, see __init__
+                self.assign_tags(task_id, [self._tag(self.group_name)], is_new=True)
         if missing_responsible:
             self.assign_tags(task_id, [self._tag("missing responsibility")], is_new=is_new)
-        if recurrence and due_at is not None and task_id not in self.imported.get("recurring"):
+        if (
+            recurrence
+            and due_at is not None
+            and ended_at is None
+            and task_id not in self.imported.get("recurring")
+        ):
             pattern, fallback = recurrence
             self.recurrence(project_id, task_id, pattern, is_all_day, fallback)
         if remind_at is not None and (is_new or task_id not in self._reminded):
@@ -488,7 +505,12 @@ class NozbeImport:
             ):
                 response.raise_for_status()
                 response.raw.decode_content = True
-                with (path := Path(tmp, Path(name).name or "attachment")).open("wb") as file:
+                with (
+                    path := Path(
+                        tmp,
+                        base if (base := Path(name).name) not in ("", ".", "..") else "attachment",
+                    )
+                ).open("wb") as file:
                     shutil.copyfileobj(response.raw, file)
                 api.AttachmentsApi(self.client).postattachment_by_id_content2(
                     comment_id, file=str(path)
@@ -507,8 +529,12 @@ class NozbeImport:
 
     @cached_property
     def time_zone(self) -> str:
-        """importing user's time zone; UTC if unset"""
-        user = api.UsersApi(self.client).get_user_by_id(self.client.configuration.username)
+        """importing user's time zone; UTC if unset or unreadable"""
+        try:
+            user = api.UsersApi(self.client).get_user_by_id(self.client.configuration.username)
+        except OpenApiException:
+            log.warning("user's time zone not read, UTC used", exc_info=True)
+            return "UTC"
         return getattr(user, "time_zone", None) or "UTC"
 
     def recurrence(
@@ -525,9 +551,15 @@ class NozbeImport:
         )
         if not recurrence_id or not self._post(
             f"recurrence of task {task_id}",
-            # PUT /tasks resets is_all_day unless sent
+            # PUT /tasks resets is_all_day unless sent; None: flags left as they are
             lambda: api.TasksApi(self.client).put_task_by_id(
-                task_id, models.Task(recurrence_id=recurrence_id, is_all_day=is_all_day)
+                task_id,
+                models.Task(
+                    recurrence_id=recurrence_id,
+                    is_all_day=is_all_day,
+                    is_followed=None,
+                    is_abandoned=None,
+                ),
             ),
         ):
             self.comment(task_id, fallback)
@@ -555,9 +587,13 @@ class NozbeImport:
         return self._tags.get(name)
 
     def tags(self, labels: Iterable[tuple[str, str | None]]) -> dict[str, str]:
-        """(name, color) labels -> name -> tag id; missing created"""
+        """(name, color) labels -> name -> tag id; missing created, unless over team limit"""
         labels = dict(labels)
-        self.check_limit("tags", len(self._tags.keys() | set(map(trim, labels))))
+        try:
+            self.check_limit("tags", len(self._tags.keys() | set(map(trim, labels))))
+        except ImportException:
+            log.warning("tags over team limit: only existing ones assigned", exc_info=True)
+            labels = {name: color for name, color in labels.items() if trim(name) in self._tags}
         return {
             name: tag_id for name, color in labels.items() if (tag_id := self._tag(name, color))
         }

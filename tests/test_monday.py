@@ -81,18 +81,21 @@ def _raw(id_, *columns, updates=()):
 
 
 DATE = {"type": "date", "text": "x", "value": '{"date": "2024-05-01", "time": "10:00:00"}'}
-PEOPLE = {"type": "people", "value": '{"personsAndTeams": [{"id": 7, "kind": "person"}]}'}
+PEOPLE = {
+    "type": "people",
+    "value": '{"personsAndTeams": [{"id": 7, "kind": "person"}, {"id": 8, "kind": "team"}]}',
+}
 
 
 @pytest.mark.parametrize(
-    "columns, due_at, is_all_day, assigned",
+    "columns, due_at, is_all_day, assigned, teams",
     [
-        ((DATE, PEOPLE), 1714557600000, False, ["7"]),
-        ((DATE | {"value": '{"date": "2024-05-01"}'},), 1714521600000, True, []),
-        ((DATE, DATE), None, False, []),
+        ((DATE, PEOPLE), 1714557600000, False, ["7"], ["8"]),
+        ((DATE | {"value": '{"date": "2024-05-01"}'},), 1714521600000, True, [], []),
+        ((DATE, DATE), None, False, [], []),
     ],
 )
-def test_task(columns, due_at, is_all_day, assigned):
+def test_task(columns, due_at, is_all_day, assigned, teams):
     replies = [{"created_at": "2024-01-03T00:00:00Z", "text_body": "r"}]
     updates = [
         {"created_at": "2024-01-02T00:00:00Z", "text_body": "u2", "replies": replies},
@@ -106,6 +109,7 @@ def test_task(columns, due_at, is_all_day, assigned):
         "group": "g",
         "position": 3,
         "assigned": assigned,
+        "teams": teams,
         "comments": [updates[1], updates[0], *replies],
     }
 
@@ -135,9 +139,9 @@ def test_board_pages_and_orders():
     tasks = _tasks(items)
     assert req.call_count == 3
     assert groups == [{"id": "g"}]
-    assert [(t["id"], t["group"], t["position"]) for t in tasks] == [
+    assert [(t.get("id"), t.get("group"), t.get("position")) for t in tasks] == [
         (3, "h", 3),
         (2, "g", 2),
         (1, "g", 1),
     ]
-    assert tasks[2]["comments"] == full[::-1]
+    assert tasks[2].get("comments") == full[::-1]

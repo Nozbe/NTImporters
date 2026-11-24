@@ -79,6 +79,12 @@ def test_parse_due(due, expected):
     assert due_fields(parse_due(due)) == expected
 
 
+def test_parse_due_in_user_zone():
+    """App-set local midnight, offset over 12 h (Auckland +13)"""
+    due = {"dateTime": "2025-03-03T11:00:00.0000000", "timeZone": "UTC"}
+    assert due_fields(parse_due(due, "Pacific/Auckland")) == (1741046400000, True)
+
+
 def test_client_follows_next_link():
     pages = [
         {"value": [{"id": "a"}], "@odata.nextLink": "https://graph.microsoft.com/next"},

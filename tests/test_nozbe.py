@@ -1,6 +1,8 @@
 import hashlib
+import io
 from collections import deque
 from datetime import date, datetime
+from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock
 
@@ -8,6 +10,7 @@ import pytest
 
 from ntimporters.nozbe import NozbeImport, due_fields, exists, get_imported_entities, run_safely
 from ntimporters.utils import ImportException
+from openapi_client.exceptions import OpenApiException
 
 AUTHOR, SAP, PROJECT = "a" * 16, "s" * 16, "p" * 16
 OLD, OTHER, NEW, TAG, COMMENT = "o" * 16, "q" * 16, "n" * 16, "x" * 16, "c" * 16
@@ -78,12 +81,13 @@ def test_due_fields_naive_as_utc():
 
 
 def test_task_recurrence_with_due_unless_recurring(nt, nz, monkeypatch):
-    """If due: set on new task and on imported one without recurrence"""
+    """If due and open: set on new task and on imported one without recurrence"""
     monkeypatch.setattr(NozbeImport, "recurrence", recurrence := MagicMock())
     nt.api.TasksApi().post_task.return_value = NS(id=NEW)
     day = date(2026, 1, 1)
     for name, due in (("Old", day), ("Pic", day), ("Undated", None), ("Dated", day)):
         nz.task(PROJECT, name, due=due, recurrence=("FREQ=DAILY", "daily"))
+    nz.task(PROJECT, "Done", due=day, ended_at=1, recurrence=("FREQ=DAILY", "daily"))
     posted = nt.api.TasksApi().post_task.call_args.args[0]
     assert (posted.due_at, posted.is_all_day) == (1767225600000, True)
     assert [elt.args[1] for elt in recurrence.call_args_list] == [OLD, NEW]
@@ -137,6 +141,15 @@ def test_comment_imported_before_reuploads_missing_file(nt, nz, monkeypatch, att
     assert upload.call_count == uploads
 
 
+@pytest.mark.parametrize("name, saved", [("a/b.png", "b.png"), ("..", "attachment")])
+def test_upload_saves_under_base_name(nt, nz, name, saved):
+    nz._downloads = MagicMock()
+    nz._downloads.get().__enter__().raw = io.BytesIO(b"data")
+    nz._upload(COMMENT, "https://f", name, None)
+    path = nt.api.AttachmentsApi().postattachment_by_id_content2.call_args.kwargs.get("file")
+    assert Path(path).name == saved
+
+
 def test_check_open_projects_counts_only_new(nz, monkeypatch):
     nz._limits, nz._team_projects = {"projects_open": 2}, []
     nz.imported["projects"] = {"Home": deque(["h" * 16])}
@@ -156,13 +169,14 @@ def test_check_limit_missing_is_unlimited(nz, monkeypatch):
 
 def test_imported_entities_chain(nt):
     """Same names, different parents (incl. Single Tasks): distinct; one parent: each record
-    matches once; fetched: group's data, author's comments only"""
+    matches once; fetched: group's data, imported Single Tasks, author's comments only"""
     nt.records = {
         "/tasks": [
             {"id": "home-call", "name": "Call mom", "created_at": 2, "project_id": "home"},
             {"id": "home-call-1", "name": "Call mom", "created_at": 1, "project_id": "home"},
             {"id": "work-call", "name": "Call mom", "project_id": "work"},
             {"id": "sap-call", "name": "Call mom", "project_id": "sap"},
+            {"id": "sap-own", "name": "Call mom", "project_id": "sap", "created_at": 0},
             {"id": "other-call", "name": "Call mom", "project_id": "other"},
         ],
         "/group_assignments": [
@@ -176,7 +190,7 @@ def test_imported_entities_chain(nt):
         ],
     }
     team_projects = [{"id": pid, "name": pid.title()} for pid in ("home", "work", "other")]
-    imported = get_imported_entities(None, "group", "me", team_projects, "sap")
+    imported = get_imported_entities(None, "group", "me", team_projects, ("sap", {"sap-call"}))
 
     assert exists("projects", "Work", imported) == "work"
     assert not exists("projects", "Other", imported)  # not in group
@@ -186,6 +200,7 @@ def test_imported_entities_chain(nt):
     assert not exists("tasks", "Call mom", imported, "home")
     assert exists("tasks", "Call mom", imported, "work") == "work-call"
     assert exists("tasks", "Call mom", imported, "sap") == "sap-call"
+    assert not exists("tasks", "Call mom", imported, "sap")  # not imported
     assert not exists("tasks", "Call mom", imported)
     assert exists("comments", "ok", imported, "home-call")
     assert not exists("comments", "ok", imported, "work-call")
@@ -244,3 +259,45 @@ def test_project_outside_group_deleted(nt, nz):
     with pytest.raises(ImportException, match="group"):
         nz.project("New")
     nt.api.ProjectsApi().delete_project_by_id.assert_called_once_with(NEW)
+
+
+def test_single_tasks_imported_only_if_tagged(nt):
+    """Imported Single Tasks: those tagged group_name; new one tagged"""
+    nt.records = {
+        "/team_members": [{"user_id": "user", "id": AUTHOR}],
+        "/projects": [{"id": SAP, "is_single_actions": True}],
+        "/tasks": [
+            {"id": OLD, "name": "Call", "project_id": SAP},
+            {"id": OTHER, "name": "Call", "project_id": SAP},
+        ],
+        "/tags": [{"id": TAG, "name": "Imported"}],
+        "/tag_assignments": [{"tag_id": TAG, "task_id": OLD}],
+    }
+    nt.api.ProjectGroupsApi().get_project_groups.return_value = []
+    nt.api.TasksApi().post_task.return_value = NS(id=NEW)
+    nz = NozbeImport("user_key", "team", "Imported", with_single_tasks=True)
+    assert nz.task(SAP, "Call") == (OLD, False)
+    assert nz.task(SAP, "Call") == (NEW, True)
+    posted = nt.api.TagAssignmentsApi().post_tag_assignment.call_args.args[0]
+    assert (posted.tag_id, posted.task_id) == (TAG, NEW)
+
+
+def test_recurrence_put_keeps_task_flags(nt, nz):
+    nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
+    nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
+    put = nt.api.TasksApi().put_task_by_id.call_args.args[1]
+    assert put.to_dict() == {"recurrence_id": "r" * 16, "is_all_day": True}
+
+
+def test_tags_over_limit_only_existing(nt, nz, monkeypatch):
+    nz._limits = {"tags": 1}
+    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
+    assert nz.tags([("missing responsibility", None), ("new", None)]) == {
+        "missing responsibility": "t" * 16
+    }
+    nt.api.TagsApi().post_tag.assert_not_called()
+
+
+def test_time_zone_unreadable_user_is_utc(nt, nz):
+    nt.api.UsersApi().get_user_by_id.side_effect = OpenApiException
+    assert nz.time_zone == "UTC"

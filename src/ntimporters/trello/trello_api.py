@@ -3,7 +3,7 @@
 import itertools
 from collections import defaultdict
 
-from ntimporters.utils import ImportException, checklist, dig, session
+from ntimporters.utils import ImportException, checklist, dig, log, session
 
 ACTIONS_LIMIT = 1000  # API maximum
 BATCH_LIMIT = 10  # API maximum
@@ -46,7 +46,7 @@ class TrelloClient:
 
     def members_emails(self, boards: list[dict]) -> dict:
         """member id -> email, boards' members but me; email only via members/{id},
-        batched by BATCH_LIMIT, failed entry refetched alone"""
+        batched by BATCH_LIMIT, failed entry refetched alone; still failing: None"""
         member_ids = {
             member.get("id") for board in boards for member in board.get("members") or []
         } - {self.author_id}
@@ -54,9 +54,16 @@ class TrelloClient:
         for chunk in itertools.batched(member_ids, BATCH_LIMIT, strict=False):
             urls = ",".join(f"/members/{member_id}?fields=email" for member_id in chunk)
             for member_id, entry in zip(chunk, self._req(f"batch?urls={urls}"), strict=True):
-                member = entry.get("200") or self._req(f"members/{member_id}")
-                emails[member_id] = member.get("email")
+                emails[member_id] = (entry.get("200") or self._member(member_id)).get("email")
         return emails
+
+    def _member(self, member_id: str) -> dict:
+        """members/{member_id}; {} (logged) if hidden or gone"""
+        try:
+            return self._req(f"members/{member_id}")
+        except ImportException:
+            log.warning("Trello member %s not readable", member_id, exc_info=True)
+            return {}
 
     def tasks(self, board_id: str) -> dict[str, list[dict]]:
         """list id -> open cards by pos (archived lists too), + checklists, attachments"""

@@ -141,3 +141,25 @@ def test_comments_bad_note_falls_back_per_task():
     with patch("requests.Session.post") as post:
         post.return_value.json.return_value = {"notes": [{"id": "1", "item_id": "t1"}]}
         assert importer._comments("token") is None
+
+
+def test_comment_bodies_as_earlier_imports():
+    """Body: content as is (empty: '…' by nz.comment), unless link only; link not in
+    content: own comment"""
+    file = NS(file_url="https://x.io/f.png", file_name="f.png", title=None, url=None)
+    link = NS(file_url=None, url="https://x.io/page")
+    comments = [
+        NS(content="", attachment=file, posted_at="1"),
+        NS(content="see", attachment=link, posted_at="2"),
+        NS(content="https://x.io/page", attachment=link, posted_at="3"),
+        NS(content="", attachment=link, posted_at="4"),
+    ]
+    ctx = MagicMock(comments={"t": comments}, todoist_token="tok")
+    importer._import_comments(ctx, "nt", NS(id="t", description=""))
+    assert [elt.args[1:] for elt in ctx.nz.comment.call_args_list] == [
+        ("", ("https://x.io/f.png", "f.png", None)),
+        ("see", None),
+        ("https://x.io/page",),
+        ("https://x.io/page", None),
+        ("https://x.io/page",),
+    ]

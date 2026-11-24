@@ -73,7 +73,7 @@ def _import_board(nz: NozbeImport, monday: MondayClient, board: dict, responsibl
             position=item.get("position") or 1,
             due=item.get("due"),
             responsible_id=first_true(map(responsible.get, item.get("assigned") or [])),
-            assigned=bool(item.get("assigned")),
+            assigned=bool(item.get("assigned") or item.get("teams")),
         )
         if nt_task_id:
             for update in item.get("comments") or []:
@@ -112,16 +112,15 @@ def _task(raw: dict, group: str | None, position: int) -> dict:
             except json.decoder.JSONDecodeError, ValueError:
                 pass
     people = first_true(columns, pred=lambda col: col.get("type") in PEOPLE and col.get("value"))
+    entries = dig(json.loads(people.get("value")) if people else {}, "personsAndTeams", [])
     return {
         "id": raw.get("id"),
         "name": raw.get("name"),
         "group": group,
         "position": position,
         "due": due,
-        "assigned": [
-            str(elt.get("id"))
-            for elt in dig(json.loads(people.get("value")) if people else {}, "personsAndTeams", [])
-        ],
+        "assigned": [str(elt.get("id")) for elt in entries if elt.get("kind") == "person"],
+        "teams": [str(elt.get("id")) for elt in entries if elt.get("kind") == "team"],
         "comments": _thread(raw.get("updates") or []),
     }
 

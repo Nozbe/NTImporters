@@ -4,11 +4,11 @@ import html
 import itertools
 import json
 import re
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timedelta
 
 from ntimporters.mstodo.mstodo_api import MSTodoClient
 from ntimporters.nozbe import NozbeImport, run_safely
-from ntimporters.utils import checklist, dig, parse_timestamp
+from ntimporters.utils import checklist, dig, parse_timestamp, zone
 
 SPEC = {
     "code": "mstodo",
@@ -40,9 +40,6 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception |
         nt_auth_token=nt_auth_token,
         auth_token=auth_token,
     )
-
-
-DAY_MS = 24 * 3600 * 1000
 
 
 def _is_default(task_list: dict) -> bool:
@@ -78,12 +75,12 @@ def _labels(task: dict) -> list[str]:
     return [*(task.get("categories") or []), *high]
 
 
-def parse_due(due: dict | None) -> date | None:
-    """dueDateTime (UTC via Prefer) -> date. Graph: UTC midnight (API-set) or local
-    midnight (app-set) -> round to nearest UTC midnight; exact for |offset| < 12 h"""
+def parse_due(due: dict | None, time_zone: str = "UTC") -> date | None:
+    """dueDateTime (UTC via Prefer) -> date: nearest midnight in time_zone. Graph: local
+    midnight (app-set): exact; UTC midnight (API-set): exact for |offset| < 12 h"""
     if (moment := parse_timestamp(dig(due, "dateTime"))) is None:
         return None
-    return datetime.fromtimestamp((moment + DAY_MS // 2) // DAY_MS * DAY_MS // 1000, UTC).date()
+    return (datetime.fromtimestamp(moment / 1000, zone(time_zone)) + timedelta(hours=12)).date()
 
 
 def _remind_at(task: dict) -> int | None:
@@ -157,7 +154,7 @@ def _import_task(
         nt_project_id,
         task.get("title"),
         position=position,
-        due=parse_due(task.get("dueDateTime")),
+        due=parse_due(task.get("dueDateTime"), nz.time_zone),
         ended_at=_ended_at(task),
         remind_at=_remind_at(task),
         recurrence=(

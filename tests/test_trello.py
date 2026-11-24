@@ -46,7 +46,11 @@ def test_tasks_grouped_by_list_in_pos_order():
 
 
 def test_members_emails_batched_failed_refetched():
-    boards = [{"members": [{"id": "me"}, {"id": "a"}]}, {"members": [{"id": "b"}, {"id": "a"}]}]
+    """Failed entry refetched; still failing (gone member): None"""
+    boards = [
+        {"members": [{"id": "me"}, {"id": "a"}]},
+        {"members": [{"id": "b"}, {"id": "a"}, {"id": "gone"}]},
+    ]
     client = TrelloClient.__new__(TrelloClient)
     client.author_id = "me"
     single = {"members/b": {"id": "b", "email": "b@x.io"}}
@@ -61,14 +65,16 @@ def test_members_emails_batched_failed_refetched():
                 {"200": {"id": "a", "email": "a@x.io"}} if i == "a" else {"statusCode": 429}
                 for i in ids
             ]
+        if suffix not in single:
+            raise ImportException("Connection to trello failed (404)")
         return single.get(suffix)
 
     with (
         patch.object(trello_api, "BATCH_LIMIT", 1),
         patch.object(client, "_req", side_effect=req) as mock,
     ):
-        assert client.members_emails(boards) == {"a": "a@x.io", "b": "b@x.io"}
-    assert len(mock.call_args_list) == 3
+        assert client.members_emails(boards) == {"a": "a@x.io", "b": "b@x.io", "gone": None}
+    assert len(mock.call_args_list) == 5
 
 
 def test_checklists():
