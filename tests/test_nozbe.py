@@ -1,11 +1,12 @@
 import hashlib
 from collections import deque
+from datetime import date, datetime
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock
 
 import pytest
 
-from ntimporters.nozbe import NozbeImport, run_safely
+from ntimporters.nozbe import NozbeImport, due_fields, exists, get_imported_entities, run_safely
 from ntimporters.utils import ImportException
 
 AUTHOR, SAP, PROJECT = "a" * 16, "s" * 16, "p" * 16
@@ -15,7 +16,8 @@ OLD, OTHER, NEW, TAG, COMMENT = "o" * 16, "q" * 16, "n" * 16, "x" * 16, "c" * 16
 @pytest.fixture
 def nz(nt):
     """NozbeImport of team: author, Ann, Bob; Single Tasks; grouped project with tasks
-    'Old' and OLD, the latter commented 'pic' by author. Construction calls forgotten."""
+    'Old' and OLD, the latter commented 'pic' by author, sections 'S' and archived 'A'.
+    Construction calls forgotten."""
     nt.records |= {
         "/team_members": [
             {"user_id": "user", "id": AUTHOR},
@@ -33,6 +35,10 @@ def nz(nt):
             {"id": OLD, "name": "Pic", "project_id": PROJECT},
         ],
         "/comments": [{"id": COMMENT, "body": "pic", "task_id": OLD}],
+        "/project_sections": [
+            {"id": "s", "name": "S", "project_id": PROJECT},
+            {"id": "a", "name": "A", "project_id": PROJECT, "archived_at": 1},
+        ],
         "/tags": [{"id": "t" * 16, "name": "missing responsibility"}],
     }
     nt.api.ProjectGroupsApi().get_project_groups.return_value = [NS(id="g" * 16)]
@@ -61,12 +67,37 @@ def test_run_safely():
 )
 def test_task_responsible(nt, nz, project_id, due_at, responsible_id, assigned, expected, tagged):
     nt.api.TasksApi().post_task.return_value = NS(id=NEW)
-    task = nz.task(
-        project_id, "New", due_at=due_at, responsible_id=responsible_id, assigned=assigned
-    )
+    due = date(2024, 1, 1) if due_at else None
+    task = nz.task(project_id, "New", due=due, responsible_id=responsible_id, assigned=assigned)
     assert task == (NEW, True)
     assert nt.api.TasksApi().post_task.call_args.args[0].responsible_id == expected
     assert nt.api.TagAssignmentsApi().post_tag_assignment.called == tagged
+
+
+def test_due_fields_naive_as_utc():
+    assert due_fields(datetime(2026, 1, 1)) == (due_fields(date(2026, 1, 1))[0], False)
+
+
+def test_task_recurrence_new_with_due_only(nt, nz, monkeypatch):
+    monkeypatch.setattr(NozbeImport, "recurrence", recurrence := MagicMock())
+    nt.api.TasksApi().post_task.return_value = NS(id=NEW)
+    for name, due in (("Old", date(2026, 1, 1)), ("Undated", None), ("Dated", date(2026, 1, 1))):
+        nz.task(PROJECT, name, due=due, recurrence=("FREQ=DAILY", "daily"))
+    posted = nt.api.TasksApi().post_task.call_args.args[0]
+    assert (posted.due_at, posted.is_all_day) == (1767225600000, True)
+    recurrence.assert_called_once_with(PROJECT, NEW, "FREQ=DAILY", True, "daily")
+
+
+def test_section_limit_counts_open_sections(nt, nz, monkeypatch):
+    """Existing non-archived sections count; reused and archived ones don't add"""
+    nz._limits = {"project_sections": 2}
+    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
+    nt.api.ProjectSectionsApi().post_project_section.return_value = NS(id=NEW)
+    assert nz.section(PROJECT, "S", 0) == "s"
+    nz.section(PROJECT, "Archived", 1, archived=True)
+    nz.section(PROJECT, "New", 2)
+    with pytest.raises(ImportException):
+        nz.section(PROJECT, "Newer", 3)
 
 
 def test_assign_tags_skips_assigned(nt, nz):
@@ -91,6 +122,7 @@ def test_members(nz):
         "a": "m1",
         "b": "m2",
     }
+    assert nz.members({"c": "nobody@z.com"}, owner="c") == {"c": AUTHOR}  # token owner
 
 
 @pytest.mark.parametrize("attached, uploads", [([], 1), ([{"id": "f"}], 0)])
@@ -111,3 +143,56 @@ def test_check_open_projects_counts_only_new(nz, monkeypatch):
     nz.check_open_projects(["Home", "Work", "Gym"])  # 2 new
     with pytest.raises(ImportException):
         nz.check_open_projects(["Home", "Home", "Work", "Gym"])  # 3 new: second Home too
+
+
+def test_check_limit_missing_is_unlimited(nz, monkeypatch):
+    nz._limits = {"projects": 1}
+    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
+    nz.check_limit("project_sections", 100)
+    with pytest.raises(ImportException):
+        nz.check_limit("projects", 2)
+
+
+def test_imported_entities_chain(nt):
+    """Same names under different parents (incl. Single Tasks) stay distinct; under one parent
+    each imported record matches once; only group's data and author's comments fetched"""
+    nt.records = {
+        "/tasks": [
+            {"id": "home-call", "name": "Call mom", "created_at": 2, "project_id": "home"},
+            {"id": "home-call-1", "name": "Call mom", "created_at": 1, "project_id": "home"},
+            {"id": "work-call", "name": "Call mom", "project_id": "work"},
+            {"id": "sap-call", "name": "Call mom", "project_id": "sap"},
+            {"id": "other-call", "name": "Call mom", "project_id": "other"},
+        ],
+        "/group_assignments": [
+            {"object_id": "home", "group_id": "group"},
+            {"object_id": "work", "group_id": "group"},
+            {"object_id": "other", "group_id": "elsewhere"},
+        ],
+        "/comments": [
+            {"id": "c1", "body": "ok", "task_id": "home-call", "author_id": "me"},
+            {"id": "c2", "body": "ok", "task_id": "work-call", "author_id": "else"},
+        ],
+    }
+    team_projects = [{"id": pid, "name": pid.title()} for pid in ("home", "work", "other")]
+    imported = get_imported_entities(None, "group", "me", team_projects, "sap")
+
+    assert exists("projects", "Work", imported) == "work"
+    assert not exists("projects", "Other", imported)  # not in group
+    # same-named tasks matched one by one, in creation order
+    assert exists("tasks", "Call mom", imported, "home") == "home-call-1"
+    assert exists("tasks", "Call mom", imported, "home") == "home-call"
+    assert not exists("tasks", "Call mom", imported, "home")
+    assert exists("tasks", "Call mom", imported, "work") == "work-call"
+    assert exists("tasks", "Call mom", imported, "sap") == "sap-call"
+    assert not exists("tasks", "Call mom", imported)
+    assert exists("comments", "ok", imported, "home-call")
+    assert not exists("comments", "ok", imported, "work-call")
+
+
+def test_task_reminder_on_new_task_only(nt, nz):
+    nt.api.TasksApi().post_task.return_value = NS(id=NEW)
+    nz.task(PROJECT, "New", remind_at=5)
+    nz.task(PROJECT, "Old", remind_at=5)  # imported before
+    posted = nt.api.RemindersApi().post_reminder.call_args_list
+    assert [(elt.args[0].task_id, elt.args[0].remind_at) for elt in posted] == [(NEW, 5)]

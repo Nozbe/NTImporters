@@ -1,5 +1,6 @@
 """Trello -> Nozbe importer"""
 
+from dateutil.parser import isoparse
 from more_itertools import first_true
 
 from ntimporters.nozbe import NozbeImport, run_safely
@@ -34,7 +35,7 @@ def _import_data(nz: NozbeImport, trello: TrelloClient):
     """Import boards (projects), lists (sections), cards (tasks)"""
     boards = trello.projects()
     nz.check_open_projects(board.get("name") for board in boards)
-    responsible = nz.members(trello.members_emails(boards)) | {trello.author_id: nz.author_id}
+    responsible = nz.members(trello.members_emails(boards), owner=trello.author_id)
     for board in boards:
         _import_board(nz, trello, board, responsible)
 
@@ -50,12 +51,13 @@ def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsibl
         )
     ):
         return
-    lists = board.get("lists") or []
-    nz.check_limit("project_sections", len(lists))
+    cards, comments = trello.tasks(board.get("id")), trello.comments(board.get("id"))
+    lists = [  # archived lists only if they hold open cards
+        elt for elt in board.get("lists") or [] if not elt.get("closed") or cards.get(elt.get("id"))
+    ]
     tag_ids = nz.tags(
         (_label_name(label), label.get("color")) for label in board.get("labels") or []
     )
-    cards, comments = trello.tasks(board.get("id")), trello.comments(board.get("id"))
     for position, trello_list in enumerate(lists):
         section_id = nz.section(
             nt_project_id,
@@ -64,16 +66,16 @@ def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsibl
             archived=bool(trello_list.get("closed")),
         )
         for card_position, card in enumerate(cards.get(trello_list.get("id")) or []):
-            due_at = parse_timestamp(card.get("due"))
+            due = card.get("due")  # always has time
             nt_task_id, is_new = nz.task(
                 nt_project_id,
                 card.get("name", ""),
                 section_id=section_id,
                 position=card_position,
-                due_at=due_at,  # trello due always has time
+                due=isoparse(due) if due else None,
                 responsible_id=first_true(map(responsible.get, card.get("idMembers") or [])),
                 assigned=bool(card.get("idMembers")),
-                ended_at=due_at if card.get("dueComplete") else None,
+                ended_at=parse_timestamp(due) if card.get("dueComplete") else None,
             )
             if not nt_task_id:
                 continue

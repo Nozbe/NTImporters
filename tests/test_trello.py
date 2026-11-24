@@ -1,7 +1,10 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+import pytest
 
 from ntimporters.trello import trello_api
 from ntimporters.trello.trello_api import TrelloClient, checklists
+from ntimporters.utils import ImportException
 
 
 def test_comments_paged_grouped_oldest_first():
@@ -42,6 +45,32 @@ def test_tasks_grouped_by_list_in_pos_order():
     }
 
 
+def test_members_emails_batched_failed_refetched():
+    boards = [{"members": [{"id": "me"}, {"id": "a"}]}, {"members": [{"id": "b"}, {"id": "a"}]}]
+    client = TrelloClient.__new__(TrelloClient)
+    client.author_id = "me"
+    single = {"members/b": {"id": "b", "email": "b@x.io"}}
+
+    def req(suffix):
+        if suffix.startswith("batch?urls="):
+            ids = [
+                url.split("/")[2].split("?")[0]
+                for url in suffix.removeprefix("batch?urls=").split(",")
+            ]
+            return [
+                {"200": {"id": "a", "email": "a@x.io"}} if i == "a" else {"statusCode": 429}
+                for i in ids
+            ]
+        return single.get(suffix)
+
+    with (
+        patch.object(trello_api, "BATCH_LIMIT", 1),
+        patch.object(client, "_req", side_effect=req) as mock,
+    ):
+        assert client.members_emails(boards) == {"a": "a@x.io", "b": "b@x.io"}
+    assert len(mock.call_args_list) == 3
+
+
 def test_checklists():
     card = {
         "checklists": [
@@ -54,3 +83,12 @@ def test_checklists():
         ]
     }
     assert checklists(card) == ["- [ ] x\n- [x] y"]
+
+
+@pytest.mark.parametrize("status, message", [(401, "wrong credentials"), (500, r"failed \(500\)")])
+def test_req_raises(status, message):
+    with (
+        patch("requests.Session.get", return_value=Mock(status_code=status, ok=False)),
+        pytest.raises(ImportException, match=message),
+    ):
+        TrelloClient("key", "token")

@@ -2,11 +2,7 @@
 
 from urllib.parse import quote
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
-from ntimporters.utils import ImportException
+from ntimporters.utils import ImportException, session
 
 
 class MSTodoClient:
@@ -16,22 +12,7 @@ class MSTodoClient:
 
     def __init__(self, token: str):
         self.headers = {"Authorization": f"Bearer {token}"}
-        self.session = requests.Session()
-        self.session.headers.update(self.headers)
-        self.session.mount(
-            "https://",
-            HTTPAdapter(
-                max_retries=Retry(
-                    total=10,
-                    status_forcelist=[429, 503, 504],
-                    allowed_methods=None,
-                    backoff_factor=2,
-                    backoff_max=60,
-                    respect_retry_after_header=True,
-                    raise_on_status=False,
-                )
-            ),
-        )
+        self.session = session(self.headers | {"Prefer": 'outlook.timezone="UTC"'})
 
     def _get_all(self, path: str, **params) -> list[dict]:
         """All records of collection at path, @odata.nextLink pages followed"""
@@ -60,16 +41,11 @@ class MSTodoClient:
         return self._get_all("lists")
 
     def tasks(self, list_id: str) -> list[dict]:
-        """Tasks of list"""
-        return self._get_all(f"lists/{quote(list_id, safe='')}/tasks")
-
-    def checklist_items(self, list_id: str, task_id: str) -> list[dict]:
-        """Checklist items (steps) of task"""
-        return self._get_all(f"{self._task_path(list_id, task_id)}/checklistItems")
-
-    def linked_resources(self, list_id: str, task_id: str) -> list[dict]:
-        """Linked resources of task"""
-        return self._get_all(f"{self._task_path(list_id, task_id)}/linkedResources")
+        """Tasks of list with checklistItems, linkedResources (key absent if none)"""
+        return self._get_all(
+            f"lists/{quote(list_id, safe='')}/tasks",
+            **{"$expand": "checklistItems,linkedResources"},
+        )
 
     def attachments(self, list_id: str, task_id: str) -> list[dict]:
         """File attachments of task, without content"""

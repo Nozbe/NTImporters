@@ -1,11 +1,13 @@
 """Nozbe side of an import: dedup within the import group and shared write rules"""
 
 import hashlib
+import itertools
 import json
 import shutil
 import tempfile
-from collections import Counter
+from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Iterable, Mapping
+from datetime import UTC, date, datetime, time
 from functools import cached_property
 from pathlib import Path
 
@@ -14,21 +16,140 @@ from more_itertools import first, unique_everseen
 
 from ntimporters.utils import (
     ImportException,
-    exists,
-    fetch_all,
-    get_group_id,
-    get_imported_entities,
     id16,
     log,
     map_color,
     nt_api_client,
+    session,
     subscribe_trial,
     trim,
 )
 from openapi_client import api, models
-from openapi_client.exceptions import OpenApiException
+from openapi_client.exceptions import ApiException, OpenApiException
 
 type File = tuple[str, str, dict | None]  # (url, name, download headers)
+
+
+def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
+    """Get project group id if any"""
+    groups = api.ProjectGroupsApi(nt_client).get_project_groups(
+        limit=1, name=group_name, team_id=team_id
+    )
+    return (group := first(groups or [], None)) and group.id
+
+
+def exists(entity_type: str, name: str, imported: dict, parent: str | None = None) -> str | None:
+    """Id of next not yet matched imported entity by name (under parent id), or None.
+    Matched ids are used up, so n same-named source entities match n imported ones."""
+    key = name if parent is None else (parent, name)
+    records = imported.get(entity_type, {}).get(key)
+    return records.popleft() if records else None
+
+
+PAGE_SIZE = 10000  # API maximum
+
+
+def fetch_all(nt_client, path: str, **filters) -> list[dict]:
+    """All records of Nozbe list endpoint path; filters on record fields run in backend's SQL"""
+    records = []
+    for offset in itertools.count(0, PAGE_SIZE):
+        response = nt_client.call_api(
+            *nt_client.param_serialize(
+                "GET",
+                path,
+                query_params=[*filters.items(), ("limit", PAGE_SIZE), ("offset", offset)],
+                header_params={"Accept": "application/json"},
+                auth_settings=["ApiKeyAuth"],
+            )
+        )
+        response.read()
+        if response.status != 200:
+            raise ApiException(status=response.status, reason=response.reason, body=response.data)
+        records += (page := json.loads(response.data) or [])
+        if len(page) < PAGE_SIZE:
+            return records
+
+
+def get_imported_entities(
+    nt_client,
+    group_id: str | None,
+    author_id: str,
+    team_projects: list[dict],
+    single_tasks_id: str | None = None,
+) -> dict[str, dict]:
+    """Ids of group's projects (and Single Tasks' tasks), in creation order: projects by name,
+    sections and tasks by (project_id, name), comments by (task_id, body); 'open_sections':
+    project_id -> number of its non-archived sections.
+    Only group's data is fetched; comments: those by author_id (importer posts as author)."""
+    imported = {
+        kind: defaultdict(deque) for kind in ("projects", "project_sections", "tasks", "comments")
+    } | {"open_sections": Counter()}
+
+    def _add(kind: str, records: list[dict], key: Callable):
+        for record in sorted(records, key=lambda elt: elt.get("created_at") or 0):
+            imported.get(kind)[key(record)].append(record.get("id"))
+
+    def _add_tasks(project_id: str) -> set[str]:
+        tasks = fetch_all(nt_client, "/tasks", project_id=project_id, fields="id,name,created_at")
+        _add("tasks", tasks, lambda elt: (project_id, elt.get("name")))
+        return {elt.get("id") for elt in tasks}
+
+    project_ids = set()
+    if group_id:
+        project_ids = {
+            elt.get("object_id")
+            for elt in fetch_all(
+                nt_client, "/group_assignments", group_id=group_id, group_type="project"
+            )
+        }
+    _add(
+        "projects",
+        [elt for elt in team_projects if elt.get("id") in project_ids],
+        lambda elt: elt.get("name"),
+    )
+    task_ids = set()
+    for project_id in project_ids:
+        sections = fetch_all(
+            nt_client,
+            "/project_sections",
+            project_id=project_id,
+            fields="id,name,created_at,archived_at",
+        )
+        _add(
+            "project_sections",
+            sections,
+            lambda elt, project_id=project_id: (project_id, elt.get("name")),
+        )
+        imported.get("open_sections")[project_id] = sum(
+            not elt.get("archived_at") for elt in sections
+        )
+        task_ids |= _add_tasks(project_id)
+    if single_tasks_id:
+        task_ids |= _add_tasks(single_tasks_id)
+    if task_ids:
+        _add(
+            "comments",
+            [
+                elt
+                for elt in fetch_all(
+                    nt_client, "/comments", author_id=author_id, fields="id,body,task_id,created_at"
+                )
+                if elt.get("task_id") in task_ids
+            ],
+            lambda elt: (elt.get("task_id"), elt.get("body")),
+        )
+    return imported
+
+
+def due_fields(due: date | datetime | None) -> tuple[int | None, bool]:
+    """(due_at ms, is_all_day): date -> its UTC midnight, all day; datetime -> its instant,
+    naive as UTC"""
+    match due:
+        case datetime():
+            return int((due if due.tzinfo else due.replace(tzinfo=UTC)).timestamp() * 1000), False
+        case date():
+            return int(datetime.combine(due, time(), UTC).timestamp() * 1000), True
+    return None, False
 
 
 def run_safely(import_data: Callable[[], object], **required) -> Exception | str | None:
@@ -95,8 +216,9 @@ class NozbeImport:
         return json.loads(getattr(team, "limits", None) or "{}")
 
     def check_limit(self, name: str, count: int):
-        """Raise ImportException if count exceeds team's limit (-1: unlimited) and no trial"""
-        if self._trial or not count > (limit := self._limits.get(name, 0)) > -1:
+        """Raise ImportException if count exceeds team's limit (-1 or missing: unlimited) and no
+        trial"""
+        if self._trial or not count > (limit := self._limits.get(name, -1)) > -1:
             return
         if not subscribe_trial(self.nt_auth_token, self.team_id):
             raise ImportException(f"LIMIT {name} : {count} > {limit}")
@@ -127,9 +249,9 @@ class NozbeImport:
             and (member_id := self._member_ids.get(elt.get("id")))
         ]
 
-    def members(self, emails: Mapping[str, str | None]) -> dict[str, str]:
+    def members(self, emails: Mapping[str, str | None], owner: str | None = None) -> dict[str, str]:
         """3rd party id -> NT member id, matched by email (case-insensitive);
-        NT email may be md5(user_id + email)"""
+        NT email may be md5(user_id + email); owner (token's 3rd party id) -> author"""
         exact = {email.lower(): member_id for email, member_id in self._team_emails}
         users = {member_id: user_id for user_id, member_id in self._member_ids.items()}
 
@@ -147,7 +269,7 @@ class NozbeImport:
             src_id: member_id
             for src_id, email in emails.items()
             if email and (member_id := member(email.lower()))
-        }
+        } | ({owner: self.author_id} if owner else {})
 
     def project(
         self,
@@ -213,10 +335,14 @@ class NozbeImport:
     def section(
         self, project_id: str, name: str, position: float, archived: bool = False
     ) -> str | None:
-        """Id of section by name in project; created if missing"""
+        """Id of section by name in project; created if missing, within team's limit of
+        non-archived sections per project"""
         if section_id := exists("project_sections", name := trim(name), self.imported, project_id):
             return section_id
-        return self._post(
+        open_sections = self.imported.get("open_sections")
+        if not archived:
+            self.check_limit("project_sections", open_sections.get(project_id, 0) + 1)
+        section_id = self._post(
             f"section {name!r}",
             lambda: api.ProjectSectionsApi(self.client).post_project_section(
                 models.ProjectSection(
@@ -229,6 +355,9 @@ class NozbeImport:
                 )
             ),
         )
+        if section_id and not archived:
+            open_sections[project_id] += 1
+        return section_id
 
     def task(
         self,
@@ -237,17 +366,22 @@ class NozbeImport:
         *,
         section_id: str | None = None,
         position: float | None = None,
-        due_at: int | None = None,
-        is_all_day: bool = False,
+        due: date | datetime | None = None,
         responsible_id: str | None = None,
         assigned: bool = False,
         ended_at: int | None = None,
+        recurrence: tuple[str | None, str] | None = None,
+        remind_at: int | None = None,
     ) -> tuple[str | None, bool]:
         """(id, is_new) of task by name in project; created if missing.
+        Due: see due_fields.
         Responsible only if due: given one, else author (+ 'missing responsibility' tag if
-        assigned in source, i.e. assignee not mapped); always author in Single Tasks."""
+        assigned in source, i.e. assignee not mapped); always author in Single Tasks.
+        recurrence: (RRULE pattern, fallback comment), set on a new task with due.
+        remind_at: ms of an absolute reminder, set on a new task."""
         if task_id := exists("tasks", name := trim(name), self.imported, project_id):
             return task_id, False
+        due_at, is_all_day = due_fields(due)
         missing_responsible = False
         if project_id == self.single_tasks_id:
             responsible_id = self.author_id
@@ -267,7 +401,7 @@ class NozbeImport:
                     author_id=self.author_id,
                     responsible_id=responsible_id,
                     due_at=due_at,
-                    is_all_day=bool(is_all_day and due_at is not None),
+                    is_all_day=is_all_day,
                     ended_at=ended_at,
                     created_at=1,
                     last_activity_at=1,
@@ -280,6 +414,22 @@ class NozbeImport:
         )
         if task_id and missing_responsible:
             self.assign_tags(task_id, [self._tag("missing responsibility")], is_new=True)
+        if task_id and recurrence and due_at is not None:
+            pattern, fallback = recurrence
+            self.recurrence(project_id, task_id, pattern, is_all_day, fallback)
+        if task_id and remind_at is not None:
+            self._post(
+                f"reminder of task {task_id}",
+                lambda: api.RemindersApi(self.client).post_reminder(
+                    models.Reminder(
+                        id=id16(),
+                        task_id=task_id,
+                        remind_at=remind_at,
+                        is_relative=False,
+                        is_all_day=False,
+                    )
+                ),
+            )
         return task_id, task_id is not None
 
     def comment(self, task_id: str, body: str | None, file: File | None = None) -> str | None:
@@ -307,11 +457,16 @@ class NozbeImport:
             self._upload(comment_id, *file)
         return comment_id
 
+    @cached_property
+    def _downloads(self) -> requests.Session:
+        """Session for attachment downloads, rate limits waited out"""
+        return session({})
+
     def _upload(self, comment_id: str, url: str, name: str, headers: dict | None):
         """Download url, attach it to comment as file name"""
         try:
             with (
-                requests.get(url, headers=headers or {}, timeout=120, stream=True) as response,
+                self._downloads.get(url, headers=headers, timeout=120, stream=True) as response,
                 tempfile.TemporaryDirectory() as tmp,
             ):
                 response.raise_for_status()
@@ -343,31 +498,22 @@ class NozbeImport:
         self, project_id: str, task_id: str, pattern: str | None, is_all_day: bool, fallback: str
     ):
         """Recurrence (RRULE pattern) of task with due_at; fallback comment if none or refused"""
-        if (
-            pattern
-            and (
-                recurrence_id := self._post(
-                    f"recurrence {pattern!r}",
-                    lambda: api.TaskRecurrencesApi(self.client).post_task_recurrence(
-                        models.TaskRecurrence(
-                            id=id16(),
-                            project_id=project_id,
-                            current_task_id=task_id,
-                            pattern=pattern,
-                        )
-                    ),
+        recurrence_id = pattern and self._post(
+            f"recurrence {pattern!r}",
+            lambda: api.TaskRecurrencesApi(self.client).post_task_recurrence(
+                models.TaskRecurrence(
+                    id=id16(), project_id=project_id, current_task_id=task_id, pattern=pattern
                 )
-            )
-            and self._post(
-                f"recurrence of task {task_id}",
-                # PUT /tasks resets is_all_day unless sent
-                lambda: api.TasksApi(self.client).put_task_by_id(
-                    task_id, models.Task(recurrence_id=recurrence_id, is_all_day=is_all_day)
-                ),
-            )
+            ),
+        )
+        if not recurrence_id or not self._post(
+            f"recurrence of task {task_id}",
+            # PUT /tasks resets is_all_day unless sent
+            lambda: api.TasksApi(self.client).put_task_by_id(
+                task_id, models.Task(recurrence_id=recurrence_id, is_all_day=is_all_day)
+            ),
         ):
-            return
-        self.comment(task_id, fallback)
+            self.comment(task_id, fallback)
 
     @cached_property
     def _tags(self) -> dict[str, str]:

@@ -1,13 +1,13 @@
 """Simple trello REST API client"""
 
+import itertools
 from collections import defaultdict
 
-import requests
-
-from ntimporters.utils import ImportException, dig
+from ntimporters.utils import ImportException, checklist, dig, session
 
 ACTIONS_LIMIT = 1000  # API maximum
-BOARD_NESTED = "lists=open&labels=all&labels_limit=1000&members=all"
+BATCH_LIMIT = 10  # API maximum
+BOARD_NESTED = "lists=all&labels=all&labels_limit=1000&members=all"
 CARD_FIELDS = "name,desc,due,dueComplete,idList,idMembers,labels,pos"
 
 # board -> project
@@ -26,16 +26,19 @@ class TrelloClient:
         self.headers = {
             "Authorization": f'OAuth oauth_consumer_key="{app_key}", oauth_token="{token}"'
         }
+        self.session = session(self.headers)
         user_data = self._req("members/me")
         self.author_id = user_data.get("id")
         self.boards_ids = user_data.get("idBoards", [])
 
     def _req(self, suffix) -> dict:
-        if resp := requests.get(f"{self.api_path}/{suffix}", headers=self.headers, timeout=60):
-            return resp.json()
-        raise ImportException(
-            f"Connection to trello failed ({resp.status_code}). Wrong credentials?"
-        )
+        """JSON at api_path/suffix; ImportException on failure"""
+        resp = self.session.get(f"{self.api_path}/{suffix}", timeout=60)
+        if resp.status_code in (401, 403):
+            raise ImportException("Trello: wrong credentials (API key or token)")
+        if not resp.ok:
+            raise ImportException(f"Connection to trello failed ({resp.status_code})")
+        return resp.json()
 
     def projects(self) -> list[dict]:
         """Boards with lists, labels, members; is_fav if starred by me"""
@@ -46,20 +49,25 @@ class TrelloClient:
         ]
 
     def members_emails(self, boards: list[dict]) -> dict:
-        """Member id -> email, other boards' members (each fetched once)"""
+        """Member id -> email, other boards' members; batches of BATCH_LIMIT
+        (email only on members/{id}), failed entry refetched alone"""
         member_ids = {
             member.get("id") for board in boards for member in board.get("members") or []
         } - {self.author_id}
-        return {
-            member_id: self._req(f"members/{member_id}").get("email") for member_id in member_ids
-        }
+        emails = {}
+        for chunk in itertools.batched(member_ids, BATCH_LIMIT, strict=False):
+            urls = ",".join(f"/members/{member_id}?fields=email" for member_id in chunk)
+            for member_id, entry in zip(chunk, self._req(f"batch?urls={urls}"), strict=True):
+                member = entry.get("200") or self._req(f"members/{member_id}")
+                emails[member_id] = member.get("email")
+        return emails
 
     def tasks(self, board_id: str) -> dict[str, list[dict]]:
-        """List id -> its open cards by pos, with checklists and attachments"""
+        """List id (archived lists too) -> its open cards by pos, with checklists and attachments"""
         lists = defaultdict(list)
         for card in sorted(
             self._req(
-                f"boards/{board_id}/cards/visible?fields={CARD_FIELDS}&checklists=all&attachments=true"
+                f"boards/{board_id}/cards/open?fields={CARD_FIELDS}&checklists=all&attachments=true"
             ),
             key=lambda card: card.get("pos") or 0,
         ):
@@ -85,9 +93,9 @@ class TrelloClient:
 def checklists(card: dict) -> list[str]:
     """Card checklists as markdown task lists"""
     return [
-        "\n".join(
-            f"- [{' ' if item.get('state') == 'incomplete' else 'x'}] {item.get('name')}"
-            for item in checklist.get("checkItems") or []
+        checklist(
+            (item.get("name"), item.get("state") != "incomplete")
+            for item in elt.get("checkItems") or []
         )
-        for checklist in card.get("checklists") or []
+        for elt in card.get("checklists") or []
     ]

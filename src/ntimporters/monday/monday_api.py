@@ -1,19 +1,15 @@
 """Monday API client module"""
 
 import itertools
-import json
 import time
 from collections.abc import Callable
 
-import requests
-from more_itertools import first_true
-
-from ntimporters.utils import ImportException, dig, parse_timestamp
+from ntimporters.utils import ImportException, dig, session
 
 UPDATE_FIELDS = "id created_at text_body replies { created_at text_body }"
-PEOPLE = {"people", "multiple-person"}
 RATE_LIMITED = {"COMPLEXITY_BUDGET_EXHAUSTED", "RATE_LIMIT_EXCEEDED", "IP_RATE_LIMIT_EXCEEDED"}
 RETRIES = 30  # with <= 60 s waits: Monday budgets reset per minute
+COST_MARGIN = 2  # pause when remaining budget is below this many last-query costs
 
 
 class MondayClient:
@@ -26,23 +22,38 @@ class MondayClient:
 
     def __init__(self, app_key):
         self.headers = {"Authorization": app_key}
+        # 429 left to _req: its body's retry_in_seconds is the right wait
+        self.session = session(self.headers, statuses=(500, 502, 503, 504))
+        self._resume_at = 0.0  # monotonic time before which the budget is too low
 
     def _req(self, query) -> dict:
-        """Response of GraphQL query; rate limits waited out (retry_in_seconds, up to
-        RETRIES times); ImportException on other HTTP or GraphQL errors"""
+        """Response of GraphQL query. Paced: if the budget left after a query is below
+        COST_MARGIN times its cost, the next waits for the budget reset. Rate limits waited
+        out (retry_in_seconds, up to RETRIES times); ImportException on daily limit and
+        other HTTP or GraphQL errors"""
         for _ in range(RETRIES):
-            resp = requests.post(
-                self.api_path, json={"query": f"{{ {query} }}"}, headers=self.headers, timeout=60
+            if (wait := self._resume_at - time.monotonic()) > 0:
+                time.sleep(wait)
+            resp = self.session.post(
+                self.api_path,
+                json={"query": f"{{ complexity {{ query after reset_in_x_seconds }} {query} }}"},
+                timeout=60,
             )
             data = resp.json() if resp.content else {}
             error = dig(data, "errors.0", {})
-            if resp.status_code == 429 or dig(error, "extensions.code") in RATE_LIMITED:
+            code = dig(error, "extensions.code")
+            if code == "DAILY_LIMIT_EXCEEDED":
+                raise ImportException("Monday API: daily limit exceeded, retry after 00:00 UTC")
+            if resp.status_code == 429 or code in RATE_LIMITED:
                 time.sleep(min(dig(error, "extensions.retry_in_seconds", 10), 60))
                 continue
             if resp.status_code != 200:
                 raise ImportException(f"Monday API: HTTP {resp.status_code}")
             if error:
                 raise ImportException(f"Monday API: {error.get('message')}")
+            cost = dig(data, "data.complexity", {})
+            if cost.get("after", 0) < COST_MARGIN * cost.get("query", 0):
+                self._resume_at = time.monotonic() + cost.get("reset_in_x_seconds", 0)
             return data
         raise ImportException("Monday API: rate limit not lifted")
 
@@ -68,72 +79,22 @@ class MondayClient:
             if board.get("type") == "board"
         ]
 
-    @staticmethod
-    def _thread(updates: list[dict]) -> list[dict]:
-        """Updates and their replies, oldest first"""
-        return sorted(
-            itertools.chain.from_iterable(
-                [update, *(update.pop("replies", None) or [])] for update in updates
-            ),
-            key=lambda elt: parse_timestamp(elt.get("created_at")) or 0,
-        )
-
-    def _comments(self, raw: dict) -> list[dict]:
-        """Thread of item raw; refetched in full if its nested updates hit the limit"""
+    def _updates(self, raw: dict) -> list[dict]:
+        """Updates of item raw; refetched in full if its nested ones hit the limit"""
         updates = raw.get("updates") or []
         if len(updates) < self.updates_limit:
-            return self._thread(updates)
-        return self._thread(
-            self._paged(
-                lambda page: (
-                    f"items(ids:{raw.get('id')}) {{ updates(limit:{self.limit} page:{page})"
-                    f" {{ {UPDATE_FIELDS} }} }}"
-                ),
-                "data.items.0.updates",
-            )
+            return updates
+        return self._paged(
+            lambda page: (
+                f"items(ids:{raw.get('id')}) {{ updates(limit:{self.limit} page:{page})"
+                f" {{ {UPDATE_FIELDS} }} }}"
+            ),
+            "data.items.0.updates",
         )
-
-    def _item(self, raw: dict, group: str | None, position: int) -> dict:
-        """Task of item or subitem raw: due_at if exactly one dated date column,
-        assigned from first people column, comments"""
-        # ASSUMPTION: if only one date-type column then it is due_at
-        columns = raw.get("column_values") or []
-        due_at, is_all_day = None, False
-        match [col for col in columns if col.get("type") == "date" and col.get("text")]:
-            case [column]:
-                try:
-                    # value holds UTC date/time; text is in account's time zone
-                    value = json.loads(column.get("value") or "{}")
-                    is_all_day = not value.get("time")
-                    due_at = parse_timestamp(
-                        f"{value.get('date')}T{value.get('time')}Z"
-                        if value.get("time")
-                        else value.get("date") or column.get("text")
-                    )
-                except json.decoder.JSONDecodeError, ValueError:
-                    pass
-        people = first_true(
-            columns, pred=lambda col: col.get("type") in PEOPLE and col.get("value")
-        )
-        return {
-            "id": raw.get("id"),
-            "name": raw.get("name"),
-            "group": group,
-            "position": position,
-            "due_at": due_at,
-            "is_all_day": is_all_day,
-            "assigned": [
-                str(elt.get("id"))
-                for elt in dig(
-                    json.loads(people.get("value")) if people else {}, "personsAndTeams", []
-                )
-            ],
-            "comments": self._comments(raw),
-        }
 
     def board(self, project_id: str) -> tuple[list[dict], list[dict]]:
-        """(groups, tasks) of board: groups (NT sections); items each followed by its subitems
-        (NT tasks), numbered 1.. in that order, returned last first"""
+        """(groups, items) of board, items in board order; items and their subitems
+        carry all their updates"""
         page_args = f"limit:{self.page_limit}"
         item_fields = (
             "id name column_values { id type text value }"
@@ -157,13 +118,14 @@ class MondayClient:
                 {},
             )
             items += page.get("items") or []
-        position = itertools.count(1)
-        tasks = [
-            self._item(raw, dig(item, "group.id"), next(position))
-            for item in items
-            for raw in [item, *(item.get("subitems") or [])]
-        ]
-        return board.get("groups") or [], tasks[::-1]
+        for item in items:
+            for raw in [item, *(item.get("subitems") or [])]:
+                raw["updates"] = self._updates(raw)
+        return board.get("groups") or [], items
+
+    def me_id(self) -> str | None:
+        """Monday id of token owner"""
+        return dig(self._req("me {id}"), "data.me.id")
 
     def users(self) -> dict:
         """Get Monday users"""

@@ -1,23 +1,19 @@
 """Common helper functions"""
 
-import itertools
-import json
 import logging
 import random
 import string
-from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Iterable
 from datetime import UTC
 from os import getenv
 
 import requests
 from dateutil.parser import isoparse
-from more_itertools import first
+from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 import openapi_client as nt
-from openapi_client import Color, api
-from openapi_client.exceptions import ApiException
+from openapi_client import Color
 
 log = logging.getLogger("ntimporters")
 
@@ -26,9 +22,39 @@ if getenv("DEV_ACCESS_TOKEN"):
     HOST = f"dev{HOST}"
 API_HOST = getenv("CUSTOM_API_HOST") or f"https://{HOST}.nozbe.com/v1/api"
 
+MAX_RETRY_AFTER = 300  # s
+
+
+class CappedRetry(Retry):
+    """Retry honouring Retry-After up to MAX_RETRY_AFTER seconds"""
+
+    def get_retry_after(self, response):
+        after = super().get_retry_after(response)
+        return None if after is None else min(after, MAX_RETRY_AFTER)
+
+
+def session(headers: dict, statuses=(429, 500, 502, 503, 504)) -> requests.Session:
+    """Session sending headers; statuses and connection errors retried up to 10 times,
+    waiting Retry-After (<= MAX_RETRY_AFTER) if sent, else backoff (0, 2, 4, ... 60 s).
+    Any method retried: for read-only clients only."""
+    sess = requests.Session()
+    sess.headers.update(headers)
+    retry = CappedRetry(
+        total=10,
+        status_forcelist=statuses,
+        allowed_methods=None,
+        backoff_factor=1,
+        backoff_max=60,
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+    sess.mount("https://", HTTPAdapter(max_retries=retry))
+    return sess
+
 
 def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
-    """NT API client: current API version, dev token, 429 retried every 10 s up to 36 times"""
+    """NT API client: current API version, dev token, 429 retried every 10 s up to 36 times;
+    read errors not retried (request may have been processed: POST would duplicate)"""
     configuration = nt.Configuration(
         host=API_HOST,
         api_key={"ApiKeyAuth": nt_auth_token},
@@ -36,6 +62,8 @@ def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
     )
     configuration.retries = Retry(
         total=36,
+        read=0,
+        other=0,
         status_forcelist=[429],
         allowed_methods=None,
         backoff_factor=10,
@@ -72,117 +100,20 @@ class ImportException(Exception):
     """Importer exception"""
 
 
-def subscribe_trial(api_key: str, nt_team_id: str, members_len: int = 1) -> bool:
+def checklist(items: Iterable[tuple[str | None, bool]]) -> str:
+    """(name, done) pairs -> markdown task list"""
+    return "\n".join(f"- [{'x' if done else ' '}] {name}" for name, done in items)
+
+
+def subscribe_trial(api_key: str, nt_team_id: str) -> bool:
     """Return True if trial has been subscribed"""
     resp = requests.patch(
         "/".join((API_HOST.removesuffix("/api"), "teams", nt_team_id, "plan")),
-        json={"members_len": members_len, "plan_type": "trial", "is_recurring": False, "creds": 0},
+        json={"members_len": 1, "plan_type": "trial", "is_recurring": False, "creds": 0},
         headers={"Authorization": f"Apikey {api_key}", "API-Version": "current"},
+        timeout=60,
     )
     return resp.status_code == 200
-
-
-def get_group_id(nt_client, team_id: str, group_name: str) -> str | None:
-    """Get project group id if any"""
-    groups = api.ProjectGroupsApi(nt_client).get_project_groups(
-        limit=1, name=group_name, team_id=team_id
-    )
-    return (group := first(groups or [], None)) and group.id
-
-
-def exists(entity_type: str, name: str, imported: dict, parent: str | None = None) -> str | None:
-    """Id of next not yet matched imported entity by name (under parent id), or None.
-    Matched ids are used up, so n same-named source entities match n imported ones."""
-    key = name if parent is None else (parent, name)
-    records = imported.get(entity_type, {}).get(key)
-    return records.popleft() if records else None
-
-
-PAGE_SIZE = 10000  # API maximum
-
-
-def fetch_all(nt_client, path: str, **filters) -> list[dict]:
-    """All records of Nozbe list endpoint path; filters on record fields run in backend's SQL"""
-    records = []
-    for offset in itertools.count(0, PAGE_SIZE):
-        response = nt_client.call_api(
-            *nt_client.param_serialize(
-                "GET",
-                path,
-                query_params=[*filters.items(), ("limit", PAGE_SIZE), ("offset", offset)],
-                header_params={"Accept": "application/json"},
-                auth_settings=["ApiKeyAuth"],
-            )
-        )
-        response.read()
-        if response.status != 200:
-            raise ApiException(status=response.status, reason=response.reason, body=response.data)
-        records += (page := json.loads(response.data) or [])
-        if len(page) < PAGE_SIZE:
-            return records
-
-
-def get_imported_entities(
-    nt_client,
-    group_id: str | None,
-    author_id: str,
-    team_projects: list[dict],
-    single_tasks_id: str | None = None,
-) -> dict[str, dict]:
-    """Ids of group's projects (and Single Tasks' tasks), in creation order: projects by name,
-    sections and tasks by (project_id, name), comments by (task_id, body).
-    Only group's data is fetched; comments: those by author_id (importer posts as author)."""
-    imported = {
-        kind: defaultdict(deque) for kind in ("projects", "project_sections", "tasks", "comments")
-    }
-
-    def _add(kind: str, records: list[dict], key: Callable):
-        for record in sorted(records, key=lambda elt: elt.get("created_at") or 0):
-            imported.get(kind)[key(record)].append(record.get("id"))
-
-    def _add_tasks(project_id: str) -> set[str]:
-        tasks = fetch_all(nt_client, "/tasks", project_id=project_id, fields="id,name,created_at")
-        _add("tasks", tasks, lambda elt: (project_id, elt.get("name")))
-        return {elt.get("id") for elt in tasks}
-
-    project_ids = set()
-    if group_id:
-        project_ids = {
-            elt.get("object_id")
-            for elt in fetch_all(
-                nt_client, "/group_assignments", group_id=group_id, group_type="project"
-            )
-        }
-    _add(
-        "projects",
-        [elt for elt in team_projects if elt.get("id") in project_ids],
-        lambda elt: elt.get("name"),
-    )
-    task_ids = set()
-    for project_id in project_ids:
-        _add(
-            "project_sections",
-            fetch_all(
-                nt_client, "/project_sections", project_id=project_id, fields="id,name,created_at"
-            ),
-            lambda elt, project_id=project_id: (project_id, elt.get("name")),
-        )
-        task_ids |= _add_tasks(project_id)
-    if single_tasks_id:
-        task_ids |= _add_tasks(single_tasks_id)
-    if task_ids:
-        _add(
-            "comments",
-            [
-                elt
-                for elt in fetch_all(
-                    nt_client, "/comments", author_id=author_id, fields="id,body,task_id,created_at"
-                )
-                if elt.get("task_id") in task_ids
-            ],
-            lambda elt: (elt.get("task_id"), elt.get("body")),
-        )
-    return imported
 
 
 def map_color(color: str | None) -> Color:

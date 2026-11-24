@@ -4,8 +4,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from dateutil.rrule import rrulestr
 
-from ntimporters.mstodo.importer import parse_due, to_rrule
+from ntimporters.mstodo.importer import _import_comments, _remind_at, parse_due, to_rrule
 from ntimporters.mstodo.mstodo_api import MSTodoClient
+from ntimporters.nozbe import due_fields
 
 
 def recurrence(range_=None, **pattern):
@@ -68,14 +69,14 @@ def test_to_rrule(value, rrule):
     "due, expected",
     [
         ({"dateTime": "2025-03-04T00:00:00.0000000", "timeZone": "UTC"}, (1741046400000, True)),
-        # due date's midnight in UTC+2 / UTC-5
-        ({"dateTime": "2025-03-03T22:00:00.0000000", "timeZone": "UTC"}, (1741046400000, True)),
+        # app-set: user's local midnight in UTC (Warsaw +1, New York -5)
+        ({"dateTime": "2025-03-03T23:00:00.0000000", "timeZone": "UTC"}, (1741046400000, True)),
         ({"dateTime": "2025-03-04T05:00:00.0000000", "timeZone": "UTC"}, (1741046400000, True)),
         (None, (None, False)),
     ],
 )
 def test_parse_due(due, expected):
-    assert parse_due(due) == expected
+    assert due_fields(parse_due(due)) == expected
 
 
 def test_client_follows_next_link():
@@ -91,3 +92,35 @@ def test_client_follows_next_link():
         "https://graph.microsoft.com/next",
     ]
     assert get.call_args_list[1].kwargs.get("params") is None
+
+
+def test_comments_from_expanded_task():
+    """checklistItems, linkedResources read from task: no per-task requests"""
+    nz, todo = MagicMock(), MagicMock()
+    task = {
+        "id": "t",
+        "checklistItems": [{"displayName": "a", "isChecked": True}],
+        "linkedResources": [{"displayName": "L", "webUrl": "https://x.io"}],
+    }
+    _import_comments(nz, todo, "l", "nt", task)
+    nz.comment.assert_called_once_with("nt", "- [x] a")
+    nz.attachment.assert_called_once_with("nt", "L", "https://x.io", is_file=False)
+    assert not todo.method_calls
+
+
+@pytest.mark.parametrize(
+    "task, expected",
+    [
+        (
+            {"isReminderOn": True, "reminderDateTime": {"dateTime": "2026-11-25T08:00:00.0000000"}},
+            1795593600000,
+        ),
+        ({"isReminderOn": False, "reminderDateTime": {"dateTime": "2026-11-25T08:00:00"}}, None),
+        (
+            {"isReminderOn": True, "status": "completed", "reminderDateTime": {"dateTime": "x"}},
+            None,
+        ),
+    ],
+)
+def test_remind_at(task, expected):
+    assert _remind_at(task) == expected

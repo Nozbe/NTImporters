@@ -20,23 +20,12 @@ Nozbe API - https://nozbe.com/api
 
 1. Sign up or log in at https://nozbe.app
 2. Go to `Settings -> Importers` and choose application to import data from
-3. Provide `Personal Access Token` / `API key` to your account registered in application selected in step 2.
+3. Provide `Personal Access Token` / `API key` to your account registered in application selected in step 2
+   (Microsoft To Do: an access token from Graph Explorer, see the [help page](https://nozbe.help/advancedfeatures/importers/)).
 4. Import your data
 5. Enjoy Nozbe!
 
 Questions? Contact support: support@nozbe.com
-
-### Microsoft To Do token
-
-Microsoft To Do has no personal API keys; use a token from Microsoft's Graph Explorer:
-
-1. Open https://developer.microsoft.com/graph/graph-explorer and sign in (top right) with the account you use in To Do.
-2. Profile avatar -> **Consent to permissions** (or the **Modify permissions** tab): consent to `Tasks.Read`.
-3. Run `GET https://graph.microsoft.com/v1.0/me/todo/lists` once; it should list your lists.
-4. **Access token** tab (next to *Request body* / *Request headers*): copy the token and paste it into Nozbe.
-
-The token expires (about a day), so start the import right after copying it; if a retry fails with
-"token invalid or expired", generate a new one. Flagged Emails (from Outlook) aren't imported.
 
 ## Contributing
 
@@ -51,18 +40,24 @@ You are welcome to contribute to **NTImporters** project by creating PRs with im
 
   ```python
   nz = NozbeImport(nt_auth_token, team_id, "Imported from MyApp")
-  nz.check_open_projects(len(boards))
+  nz.check_open_projects(board["name"] for board in boards)
+  responsible = nz.members({user["id"]: user["email"] for user in users}, owner=me["id"])
   project_id = nz.project(board["name"], is_favorite=board["starred"])
   section_id = nz.section(project_id, column["name"], position)
   task_id, is_new = nz.task(
-      project_id, card["name"], section_id=section_id, due_at=..., responsible_id=...
+      project_id,
+      card["name"],
+      section_id=section_id,
+      due=...,  # date (all day) or datetime
+      responsible_id=responsible.get(card["assignee"]),
+      assigned=bool(card["assignee"]),
   )
   nz.assign_tags(task_id, tag_ids, is_new)
   nz.comment(task_id, card["description"])
   nz.attachment(task_id, file["name"], file["url"], is_file=True, headers=auth_headers)
   ```
 
-  It keeps imported projects in the "Imported from <app>" group and makes re-runs safe: projects match by name, sections and tasks by name within their project, comments by body within their task. Shared rules live there too: limits, a due task without a responsible person goes to the author with a "missing responsibility" tag, Single Tasks are the author's.
+  It keeps imported projects in the "Imported from <app>" group and makes re-runs safe: projects match by name, sections and tasks by name within their project, comments by body within their task. Shared rules live there too: limits (projects imported before don't count; sections checked per project as created), members matched by email (the token owner is the importing user), a new task's recurrence (`recurrence=(rrule, fallback comment)`) is set only if it is due, a due task goes to its mapped assignee, else to the author (with a "missing responsibility" tag if the source assignee couldn't be mapped), tasks without due date have no responsible person, Single Tasks are the author's.
 - Partial failures (one attachment, one tag) are logged as warnings on the `ntimporters` logger and don't stop the import
 
 ## Development
@@ -71,8 +66,9 @@ Requires [uv](https://docs.astral.sh/uv/) (and Java for regenerating the API cli
 
 ```sh
 uv sync        # create .venv with all dependencies
-make lint      # ruff
-make test      # pytest
+make lint      # ruff check + format check
+make format    # ruff fix + format
+make test      # pytest; tests can't reach the network (default API host is production)
 ```
 
 Run an importer against a local or dev Nozbe backend:

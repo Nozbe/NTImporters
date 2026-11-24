@@ -8,13 +8,14 @@ authors = [{ name = "jsamelak", email = "jarek@nozbe.com" }]
 requires-python = ">=3.14"
 dependencies = [
     "asana>=5.0.6",
+    "httpx>=0.28",
     "more-itertools>=10",
     "pydantic>=2",
     "python-dateutil>=2.5.3",
     "requests",
     "todoist-api-python>=4.0.1,<5",
     "typing-extensions>=4.7.1",
-    "urllib3>=1.25.3",
+    "urllib3>=2",
 ]
 
 [project.urls]

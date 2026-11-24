@@ -230,6 +230,7 @@ version = "0.1"
 source = { editable = "." }
 dependencies = [
     { name = "asana" },
+    { name = "httpx" },
     { name = "more-itertools" },
     { name = "pydantic" },
     { name = "python-dateutil" },
@@ -248,13 +249,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "asana", specifier = ">=5.0.6" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "more-itertools", specifier = ">=10" },
     { name = "pydantic", specifier = ">=2" },
     { name = "python-dateutil", specifier = ">=2.5.3" },
     { name = "requests" },
     { name = "todoist-api-python", specifier = ">=4.0.1,<5" },
     { name = "typing-extensions", specifier = ">=4.7.1" },
-    { name = "urllib3", specifier = ">=1.25.3" },
+    { name = "urllib3", specifier = ">=2" },
 ]
 
 [package.metadata.requires-dev]

@@ -1,21 +1,23 @@
 """Todoist -> Nozbe importer"""
 
 import itertools
+import time
+from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
+from datetime import date, datetime
 from operator import attrgetter
 from pathlib import Path
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import httpx
 import requests
 from todoist_api_python.api import TodoistAPI
-from todoist_api_python.models import Attachment, Due, Project, Task
+from todoist_api_python.models import Attachment, Comment, Due, Project, Task
 
 from ntimporters.nozbe import File, NozbeImport, run_safely
-from ntimporters.rate_limiting import RLProxy
 from ntimporters.todoist.recurrence import to_rrule
-from ntimporters.utils import dig
+from ntimporters.utils import dig, log, session
 
 SPEC = {
     "code": "todoist",  # codename / ID of importer
@@ -24,6 +26,24 @@ SPEC = {
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Todoist"
+API_URL = "https://api.todoist.com/api/v1"
+RETRIES = 10
+MAX_WAIT = 300  # s per wait: worst case ~50 min per request
+
+
+class RetryTransport(httpx.HTTPTransport):
+    """HTTPTransport retrying 429/503 up to RETRIES times: waits Retry-After seconds
+    (<= MAX_WAIT) if sent, else 1, 2, 4, ... 60 s"""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        for attempt in range(RETRIES):
+            response = super().handle_request(request)
+            if response.status_code not in (429, 503):
+                return response
+            response.close()
+            after = response.headers.get("Retry-After", "")
+            time.sleep(min(int(after), MAX_WAIT) if after.isdigit() else min(2**attempt, 60))
+        return super().handle_request(request)
 
 
 def unpack(paginator) -> list:
@@ -36,10 +56,12 @@ class Ctx:
     """Import-wide state"""
 
     nz: NozbeImport
-    todoist: RLProxy
+    todoist: TodoistAPI
     todoist_token: str
+    owner: str | None
     time_zone: str
     tags: dict[str, str]
+    comments: dict[str, list[Comment] | None] | None
 
 
 # main method called by Nozbe app
@@ -48,7 +70,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception |
     return run_safely(
         lambda: _import_data(
             NozbeImport(nt_auth_token, team_id, IMPORT_NAME, with_single_tasks=True),
-            RLProxy(TodoistAPI(auth_token)),
+            TodoistAPI(auth_token, client=httpx.Client(transport=RetryTransport())),
             auth_token,
         ),
         nt_auth_token=nt_auth_token,
@@ -60,29 +82,47 @@ def _import_data(nz: NozbeImport, todoist, todoist_token: str):
     """Import everything from todoist to Nozbe"""
     projects = unpack(todoist.get_projects())
     nz.check_open_projects(project.name for project in projects if not project.is_inbox_project)
+    user = _todoist_user(todoist_token)
     ctx = Ctx(
         nz=nz,
         todoist=todoist,
         todoist_token=todoist_token,
-        time_zone=_todoist_time_zone(todoist_token) or nz.time_zone,
+        owner=user.get("id"),
+        time_zone=dig(user, "tz_info.timezone") or nz.time_zone,
         tags=nz.tags((label.name, label.color) for label in unpack(todoist.get_labels())),
+        comments=_comments(todoist_token),
     )
     for project in projects:
         _import_project(ctx, project)
 
 
-def _todoist_time_zone(token: str) -> str | None:
-    """Todoist user's time zone"""
+def _todoist_user(token: str) -> dict:
+    """Todoist token owner; {} on failure"""
     try:
-        response = requests.get(
-            "https://api.todoist.com/api/v1/user",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
+        response = session({"Authorization": f"Bearer {token}"}).get(f"{API_URL}/user", timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        return {}
+
+
+def _comments(token: str) -> dict[str, list[Comment] | None] | None:
+    """Task id -> its comments, from one full sync of notes; deleted skipped;
+    None for tasks the sync marks incomplete, None at all if sync failed (refetch per task)"""
+    try:
+        response = session({"Authorization": f"Bearer {token}"}).post(
+            f"{API_URL}/sync", data={"sync_token": "*", "resource_types": '["notes"]'}, timeout=60
         )
         response.raise_for_status()
-        return dig(response.json(), "tz_info.timezone")
-    except requests.RequestException:
+        sync = response.json()
+        comments = defaultdict(list)
+        for note in sync.get("notes") or []:
+            if not note.get("is_deleted"):
+                comments[note.get("item_id")].append(Comment.from_dict(note))
+    except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
+        log.warning("Todoist comments sync failed, fetching per task: %s", exc)
         return None
+    return comments | dict.fromkeys(sync.get("incomplete_item_ids") or [])
 
 
 def _import_project(ctx: Ctx, project: Project):
@@ -107,19 +147,17 @@ def _assignees(ctx: Ctx, project: Project) -> dict[str, str]:
     if not project.is_shared:
         return {}
     collaborators = unpack(ctx.todoist.get_collaborators(project_id=project.id))
-    return ctx.nz.members({elt.id: elt.email for elt in collaborators})
+    return ctx.nz.members({elt.id: elt.email for elt in collaborators}, owner=ctx.owner)
 
 
-def parse_due(due: Due | None, time_zone: str) -> tuple[int | None, bool]:
-    """Due -> (due_at ms, is_all_day); date: UTC midnight, floating datetime: in due/user zone"""
+def parse_due(due: Due | None, time_zone: str) -> date | datetime | None:
+    """Due date, or aware datetime (floating one in due/user zone)"""
     match due and due.date:
-        case datetime() as moment:
-            if not moment.tzinfo:
-                moment = moment.replace(tzinfo=_zone(due.timezone or time_zone))
-            return int(moment.timestamp() * 1000), False
-        case date() as day:
-            return int(datetime.combine(day, time(), UTC).timestamp() * 1000), True
-    return None, False
+        case datetime() as moment if not moment.tzinfo:
+            return moment.replace(tzinfo=_zone(due.timezone or time_zone))
+        case date() as value:  # date or aware datetime
+            return value
+    return None
 
 
 def _zone(name: str) -> ZoneInfo:
@@ -132,43 +170,34 @@ def _zone(name: str) -> ZoneInfo:
 
 def _import_task(ctx: Ctx, task: Task, nt_project_id: str, sections: dict, assignees: dict):
     """Import todoist task with comments, tags and recurrence"""
-    due_at, is_all_day = parse_due(task.due, ctx.time_zone)
     nt_task_id, is_new = ctx.nz.task(
         nt_project_id,
         task.content,
         section_id=sections.get(task.section_id),
         position=task.order or 1,
-        due_at=due_at,
-        is_all_day=is_all_day,
+        due=parse_due(task.due, ctx.time_zone),
         responsible_id=assignees.get(task.assignee_id),
         assigned=bool(task.assignee_id),
+        recurrence=(
+            (to_rrule(task.due.string, task.due.lang), f"Todoist: {task.due.string}")
+            if task.due and task.due.is_recurring
+            else None
+        ),
     )
     if not nt_task_id:
         return
-    if is_new and due_at is not None and task.due.is_recurring:
-        _import_recurrence(ctx, nt_project_id, nt_task_id, task.due, is_all_day)
     _import_comments(ctx, nt_task_id, task)
     ctx.nz.assign_tags(nt_task_id, map(ctx.tags.get, task.labels or []), is_new)
-
-
-def _import_recurrence(ctx: Ctx, nt_project_id: str, nt_task_id: str, due: Due, is_all_day: bool):
-    """Set task recurrence; unparsed rule goes to a comment"""
-    ctx.nz.recurrence(
-        nt_project_id,
-        nt_task_id,
-        to_rrule(due.string, due.lang),
-        is_all_day,
-        f"Todoist: {due.string}",
-    )
 
 
 def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
     """Import description and comments with attachments"""
     if task.description:
         ctx.nz.comment(nt_task_id, task.description)
-    for comment in sorted(
-        unpack(ctx.todoist.get_comments(task_id=task.id)), key=attrgetter("posted_at")
-    ):
+    comments = None if ctx.comments is None else ctx.comments.get(task.id, [])
+    if comments is None:
+        comments = unpack(ctx.todoist.get_comments(task_id=task.id))
+    for comment in sorted(comments, key=attrgetter("posted_at")):
         body, attachment = comment.content, comment.attachment
         if attachment and not attachment.file_url and attachment.url and attachment.url not in body:
             body = f"{body}\n{attachment.url}".strip()

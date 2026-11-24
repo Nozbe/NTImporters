@@ -4,10 +4,11 @@ import html
 import itertools
 import json
 import re
+from datetime import UTC, date, datetime
 
 from ntimporters.mstodo.mstodo_api import MSTodoClient
 from ntimporters.nozbe import NozbeImport, run_safely
-from ntimporters.utils import dig, parse_timestamp
+from ntimporters.utils import checklist, dig, parse_timestamp
 
 SPEC = {
     "code": "mstodo",  # codename / ID of importer
@@ -17,7 +18,6 @@ SPEC = {
 }
 IMPORT_NAME = "Imported from Microsoft To Do"
 HIGH_IMPORTANCE = "high importance"
-DAY_MS = 86_400_000
 DAYS = {
     "monday": "MO",
     "tuesday": "TU",
@@ -41,6 +41,9 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception |
         nt_auth_token=nt_auth_token,
         auth_token=auth_token,
     )
+
+
+DAY_MS = 24 * 3600 * 1000
 
 
 def _is_default(task_list: dict) -> bool:
@@ -76,12 +79,20 @@ def _labels(task: dict) -> list[str]:
     return [*(task.get("categories") or []), *high]
 
 
-def parse_due(due: dict | None) -> tuple[int | None, bool]:
-    """dueDateTime -> (UTC midnight ms of its date, True); (None, False) if none.
-    Graph gives due date's local midnight in UTC: rounded to nearest midnight."""
+def parse_due(due: dict | None) -> date | None:
+    """dueDateTime (UTC, Prefer header) -> its date; None if none. Graph gives the date's
+    midnight in UTC (API-set) or the user's local midnight in UTC (app-set): rounded to
+    nearest UTC midnight, exact for offsets under 12 h."""
     if (moment := parse_timestamp(dig(due, "dateTime"))) is None:
-        return None, False
-    return (moment + DAY_MS // 2) // DAY_MS * DAY_MS, True
+        return None
+    return datetime.fromtimestamp((moment + DAY_MS // 2) // DAY_MS * DAY_MS // 1000, UTC).date()
+
+
+def _remind_at(task: dict) -> int | None:
+    """Reminder ms of open task with reminder on"""
+    if task.get("isReminderOn") and task.get("status") != "completed":
+        return parse_timestamp(dig(task, "reminderDateTime.dateTime"))
+    return None
 
 
 def _ended_at(task: dict) -> int | None:
@@ -143,32 +154,25 @@ def _import_task(
     tags: dict[str, str],
 ):
     """Import task with tags, recurrence and comments"""
-    due_at, is_all_day = parse_due(task.get("dueDateTime"))
+    recurrence = task.get("recurrence")
     nt_task_id, is_new = nz.task(
         nt_project_id,
         task.get("title"),
         position=position,
-        due_at=due_at,
-        is_all_day=is_all_day,
+        due=parse_due(task.get("dueDateTime")),
         ended_at=_ended_at(task),
+        remind_at=_remind_at(task),
+        recurrence=(
+            to_rrule(recurrence),
+            f"Microsoft To Do recurrence: {json.dumps(recurrence.get('pattern'))}",
+        )
+        if recurrence
+        else None,
     )
     if not nt_task_id:
         return
     nz.assign_tags(nt_task_id, map(tags.get, _labels(task)), is_new)
-    if is_new and due_at is not None and (recurrence := task.get("recurrence")):
-        _import_recurrence(nz, nt_project_id, nt_task_id, recurrence)
     _import_comments(nz, todo, list_id, nt_task_id, task)
-
-
-def _import_recurrence(nz: NozbeImport, nt_project_id: str, nt_task_id: str, recurrence: dict):
-    """Set task recurrence; unmapped one goes to a comment"""
-    nz.recurrence(
-        nt_project_id,
-        nt_task_id,
-        to_rrule(recurrence),
-        True,
-        f"Microsoft To Do recurrence: {json.dumps(recurrence.get('pattern'))}",
-    )
 
 
 def _text(body: dict | None) -> str:
@@ -189,15 +193,12 @@ def _import_comments(
     task_id = task.get("id")
     if body := _text(task.get("body")):
         nz.comment(nt_task_id, body)
-    if items := todo.checklist_items(list_id, task_id):
+    if items := task.get("checklistItems"):
         nz.comment(
             nt_task_id,
-            "\n".join(
-                f"- [{'x' if item.get('isChecked') else ' '}] {item.get('displayName')}"
-                for item in items
-            ),
+            checklist((item.get("displayName"), bool(item.get("isChecked"))) for item in items),
         )
-    for resource in todo.linked_resources(list_id, task_id):
+    for resource in task.get("linkedResources") or []:
         nz.attachment(
             nt_task_id,
             resource.get("displayName") or resource.get("applicationName") or "link",

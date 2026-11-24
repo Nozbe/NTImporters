@@ -72,10 +72,11 @@ def _rule(text: str | None) -> str | None:
     text = TAIL.sub("", f" {(text or '').lower().replace('!', '')} ")
     tokens = [t for t in re.split(r"[\s,]+", NOISE.sub(" ", text)) if t and t not in FILLER]
     interval = 1
-    if (
-        len(tokens) > 1
-        and tokens[1] not in MONTH  # "27 jan" is a date
-        and (n := int(tokens[0]) if tokens[0].isdigit() else INTERVAL.get(tokens[0]))
+    # number is an interval only before a unit word: "27 jan", "1, 15" are dates
+    if len(tokens) > 1 and (
+        n := int(tokens[0])
+        if tokens[0].isdigit() and (tokens[1] in FREQ or tokens[1] in QUARTER)
+        else INTERVAL.get(tokens[0])
     ):
         interval, tokens = n, tokens[1:]
     every = f";INTERVAL={interval}" if interval > 1 else ""

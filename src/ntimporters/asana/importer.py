@@ -1,9 +1,13 @@
 """Asana -> Nozbe importer"""
 
+from datetime import date, datetime
+
 import asana
+from dateutil.parser import isoparse
+from more_itertools import first
 
 from ntimporters.nozbe import NozbeImport, run_safely
-from ntimporters.utils import dig, parse_timestamp
+from ntimporters.utils import checklist, dig, parse_timestamp
 from openapi_client import models
 
 SPEC = {
@@ -36,7 +40,8 @@ SKIPPED_WORKSPACES = {"1162055570357937"}
 IMPORT_NAME = "Imported from Asana"
 # everything _import_tasks / _import_comments read, so list endpoints replace per-task get_task
 TASK_FIELDS = (
-    "name,notes,due_on,due_at,completed_at,assignee,memberships.section,projects,tags,num_subtasks"
+    "name,notes,due_on,due_at,completed_at,assignee,memberships.project,memberships.section,"
+    "projects,tags,num_subtasks"
 )
 
 
@@ -63,9 +68,9 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
     tags_api = asana.TagsApi(asana_client)
     tasks_api = asana.TasksApi(asana_client)
     projects = {
-        elt["gid"]: list(
+        elt.get("gid"): list(
             projects_api.get_projects_for_workspace(
-                elt["gid"], {"opt_fields": "name,color,archived"}
+                elt.get("gid"), {"opt_fields": "name,color,archived"}
             )
         )
         for elt in workspaces
@@ -73,15 +78,16 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
     nz.check_open_projects(
         elt.get("name") for elts in projects.values() for elt in elts if not elt.get("archived")
     )
-    responsible = nz.members(
-        {elt.get("gid"): elt.get("email") for elt in asana_users(asana_client, workspaces)}
-    )
     me = asana.UsersApi(asana_client).get_user("me", {})
+    responsible = nz.members(
+        {elt.get("gid"): elt.get("email") for elt in asana_users(asana_client, workspaces)},
+        owner=me.get("gid"),
+    )
     for workspace in workspaces:
         tags = {
-            tag["gid"]: tag
+            tag.get("gid"): tag
             for tag in tags_api.get_tags_for_workspace(
-                workspace["gid"], {"opt_fields": "name,color"}
+                workspace.get("gid"), {"opt_fields": "name,color"}
             )
         }
         nt_tags = nz.tags(
@@ -89,7 +95,7 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
         )
         tag_ids = {gid: nt_tags.get(tag.get("name", "")) for gid, tag in tags.items()}
 
-        for project in projects.get(workspace["gid"]):
+        for project in projects.get(workspace.get("gid")):
             if not (
                 nt_project_id := nz.project(
                     project.get("name", ""),
@@ -100,21 +106,22 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
                 continue
             section_ids = {}
             for position, section in enumerate(
-                sections_api.get_sections_for_project(project["gid"], {"opt_fields": "name"})
+                sections_api.get_sections_for_project(project.get("gid"), {"opt_fields": "name"})
             ):
                 # Asana sections have no archived state
                 if section.get("name") == "Untitled section":
                     continue
                 if section_id := nz.section(nt_project_id, section.get("name", ""), position):
-                    section_ids[section["gid"]] = section_id
+                    section_ids[section.get("gid")] = section_id
             _import_tasks(
                 nz,
                 asana_client,
-                tasks_api.get_tasks_for_project(project["gid"], {"opt_fields": TASK_FIELDS}),
+                tasks_api.get_tasks_for_project(project.get("gid"), {"opt_fields": TASK_FIELDS}),
                 nt_project_id,
                 section_ids,
                 tag_ids,
                 responsible,
+                project_gid=project.get("gid"),
             )
 
         # loose tasks assigned to me -> Single Tasks
@@ -122,7 +129,11 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
             nz,
             asana_client,
             tasks_api.get_tasks(
-                {"workspace": workspace["gid"], "assignee": me["gid"], "opt_fields": TASK_FIELDS}
+                {
+                    "workspace": workspace.get("gid"),
+                    "assignee": me.get("gid"),
+                    "opt_fields": TASK_FIELDS,
+                }
             ),
             nz.single_tasks_id,
             {},
@@ -141,17 +152,26 @@ def _import_tasks(
     tag_ids: dict,
     responsible: dict,
     loose: bool = False,
+    project_gid: str | None = None,
 ):
-    """Import tasks (records with TASK_FIELDS); loose: only those outside any project"""
+    """Import tasks (records with TASK_FIELDS); loose: only those outside any project;
+    section from the membership in project_gid"""
     for task in asana_tasks:
         if loose and task.get("projects"):
             continue
+        section_gid = first(
+            (
+                dig(membership, "section.gid")
+                for membership in task.get("memberships") or []
+                if dig(membership, "project.gid") == project_gid
+            ),
+            None,
+        )
         nt_task_id, is_new = nz.task(
             nt_project_id,
             task.get("name", ""),
-            section_id=section_ids.get(dig(task, "memberships.0.section.gid")),
-            due_at=parse_timestamp(task.get("due_at") or task.get("due_on")),
-            is_all_day=not task.get("due_at"),
+            section_id=section_ids.get(section_gid),
+            due=_due(task),
             responsible_id=responsible.get(dig(task, "assignee.gid")),
             assigned=bool(dig(task, "assignee.gid")),
             ended_at=parse_timestamp(task.get("completed_at")),
@@ -164,20 +184,29 @@ def _import_tasks(
         _import_comments(nz, asana_client, nt_task_id, task)
 
 
+def _due(task: dict) -> date | datetime | None:
+    """due_at datetime, else due_on date"""
+    if due_at := task.get("due_at"):
+        return isoparse(due_at)
+    if due_on := task.get("due_on"):
+        return isoparse(due_on).date()
+    return None
+
+
 def _import_comments(nz: NozbeImport, asana_client, nt_task_id: str, task: dict):
     """Notes, subtasks as checklist, comment stories, attachments"""
     gid = task.get("gid")
     if notes := task.get("notes"):
         nz.comment(nt_task_id, notes)
     if task.get("num_subtasks") and (
-        checklist := "\n".join(
-            f"- [{'x' if item.get('completed') else ' '}] {item.get('name')}"
+        items := checklist(
+            (item.get("name"), bool(item.get("completed")))
             for item in asana.TasksApi(asana_client).get_subtasks_for_task(
                 gid, {"opt_fields": "name,completed"}
             )
         )
     ):
-        nz.comment(nt_task_id, checklist)
+        nz.comment(nt_task_id, items)
     for story in asana.StoriesApi(asana_client).get_stories_for_task(
         gid, {"opt_fields": "type,text"}
     ):
@@ -206,7 +235,7 @@ def asana_users(asana_client, workspaces: list) -> list[dict]:
         user
         for workspace in workspaces
         for user in asana.UsersApi(asana_client).get_users(
-            {"workspace": workspace["gid"], "opt_fields": "gid,email"}
+            {"workspace": workspace.get("gid"), "opt_fields": "gid,email"}
         )
         if user.get("email") is not None
     ]
@@ -217,5 +246,5 @@ def get_workspaces(asana_client) -> list:
     return [
         workspace
         for workspace in asana.WorkspacesApi(asana_client).get_workspaces({})
-        if workspace["gid"] not in SKIPPED_WORKSPACES
+        if workspace.get("gid") not in SKIPPED_WORKSPACES
     ]
