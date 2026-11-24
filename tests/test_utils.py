@@ -1,3 +1,5 @@
+import pytest
+
 from ntimporters.utils import dig, nt_api_client, parse_timestamp
 
 
@@ -25,3 +27,15 @@ def test_dig():
     assert dig(data, "a.1.b", 0) == 0
     assert dig(data, "a.5.b") is None
     assert dig(data, "a.x") is None
+
+
+def test_nozbe_retry_429_any_method_read_errors_idempotent_only():
+    """429 retried for POST too; read errors (request maybe processed) not for POST"""
+    from urllib3.exceptions import ReadTimeoutError
+
+    retry = nt_api_client("user_key").configuration.retries
+    assert retry.is_retry("POST", 429) and not retry.is_retry("GET", 500)
+    error = ReadTimeoutError(None, "/x", "timeout")
+    assert retry.increment("GET", "/x", error=error).read == 2
+    with pytest.raises(ReadTimeoutError):
+        retry.increment("POST", "/x", error=error)

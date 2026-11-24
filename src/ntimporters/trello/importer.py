@@ -1,5 +1,7 @@
 """Trello -> Nozbe importer"""
 
+from urllib.parse import urlparse
+
 from dateutil.parser import isoparse
 from more_itertools import first_true
 
@@ -34,7 +36,7 @@ def run_import(
 def _import_data(nz: NozbeImport, trello: TrelloClient):
     """Import boards (projects), lists (sections), cards (tasks)"""
     boards = trello.projects()
-    nz.check_open_projects(board.get("name") for board in boards)
+    nz.check_open_projects(board.get("name") for board in boards if not board.get("closed"))
     responsible = nz.members(trello.members_emails(boards), owner=trello.author_id)
     for board in boards:
         _import_board(nz, trello, board, responsible)
@@ -48,6 +50,7 @@ def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsibl
             color=map_color(_color(dig(board, "prefs.background"))),
             description=board.get("desc") or "",
             is_favorite=board.get("is_fav"),
+            ended=bool(board.get("closed")),
         )
     ):
         return
@@ -106,8 +109,14 @@ def _import_comments(
             attachment.get("name") or "attachment",
             attachment.get("url"),
             bool(attachment.get("isUpload")),
-            trello.headers,
+            trello.headers if _is_trello(attachment.get("url")) else None,
         )
+
+
+def _is_trello(url: str | None) -> bool:
+    """URL on trello.com (OAuth headers sent only there)"""
+    host = urlparse(url or "").hostname or ""
+    return host == "trello.com" or host.endswith(".trello.com")
 
 
 def _color(background: str | None) -> str | None:

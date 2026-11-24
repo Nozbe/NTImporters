@@ -52,20 +52,29 @@ def session(headers: dict, statuses=(429, 500, 502, 503, 504)) -> requests.Sessi
     return sess
 
 
+class NozbeRetry(CappedRetry):
+    """CappedRetry retrying forced statuses (429) for any method; read errors only for
+    idempotent methods (a replayed POST would duplicate)"""
+
+    def is_retry(self, method, status_code, has_retry_after=False):
+        return bool(self.status_forcelist and status_code in self.status_forcelist)
+
+
 def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
-    """NT API client: current API version, dev token, 429 retried every 10 s up to 36 times;
-    read errors not retried (request may have been processed: POST would duplicate)"""
+    """NT API client: current API version, dev token; 429 retried up to 36 times (first at
+    once, then every 10 s or Retry-After <= MAX_RETRY_AFTER); GET/PUT/DELETE read and
+    connection errors retried 3 times, POST connection errors only"""
     configuration = nt.Configuration(
         host=API_HOST,
         api_key={"ApiKeyAuth": nt_auth_token},
         username=nt_auth_token.split("_")[0],
     )
-    configuration.retries = Retry(
+    configuration.retries = NozbeRetry(
         total=36,
-        read=0,
+        connect=3,
+        read=3,
         other=0,
         status_forcelist=[429],
-        allowed_methods=None,
         backoff_factor=10,
         backoff_max=10,
         respect_retry_after_header=True,

@@ -16,7 +16,7 @@ OLD, OTHER, NEW, TAG, COMMENT = "o" * 16, "q" * 16, "n" * 16, "x" * 16, "c" * 16
 @pytest.fixture
 def nz(nt):
     """NozbeImport of team: author, Ann, Bob; Single Tasks; grouped project with tasks
-    'Old' and OLD, the latter commented 'pic' by author, sections 'S' and archived 'A'.
+    'Old' (recurring) and OLD, the latter commented 'pic' by author, sections 'S' and archived 'A'.
     Construction calls forgotten."""
     nt.records |= {
         "/team_members": [
@@ -31,7 +31,7 @@ def nz(nt):
         "/projects": [{"id": SAP, "is_single_actions": True}, {"id": PROJECT, "name": "P"}],
         "/group_assignments": [{"object_id": PROJECT}],
         "/tasks": [
-            {"id": "old", "name": "Old", "project_id": PROJECT},
+            {"id": "old", "name": "Old", "project_id": PROJECT, "recurrence_id": "r" * 16},
             {"id": OLD, "name": "Pic", "project_id": PROJECT},
         ],
         "/comments": [{"id": COMMENT, "body": "pic", "task_id": OLD}],
@@ -78,14 +78,17 @@ def test_due_fields_naive_as_utc():
     assert due_fields(datetime(2026, 1, 1)) == (due_fields(date(2026, 1, 1))[0], False)
 
 
-def test_task_recurrence_new_with_due_only(nt, nz, monkeypatch):
+def test_task_recurrence_with_due_unless_recurring(nt, nz, monkeypatch):
+    """Set on new task and on one imported before without recurrence, if due"""
     monkeypatch.setattr(NozbeImport, "recurrence", recurrence := MagicMock())
     nt.api.TasksApi().post_task.return_value = NS(id=NEW)
-    for name, due in (("Old", date(2026, 1, 1)), ("Undated", None), ("Dated", date(2026, 1, 1))):
+    day = date(2026, 1, 1)
+    for name, due in (("Old", day), ("Pic", day), ("Undated", None), ("Dated", day)):
         nz.task(PROJECT, name, due=due, recurrence=("FREQ=DAILY", "daily"))
     posted = nt.api.TasksApi().post_task.call_args.args[0]
     assert (posted.due_at, posted.is_all_day) == (1767225600000, True)
-    recurrence.assert_called_once_with(PROJECT, NEW, "FREQ=DAILY", True, "daily")
+    assert [elt.args[1] for elt in recurrence.call_args_list] == [OLD, NEW]
+    recurrence.assert_called_with(PROJECT, NEW, "FREQ=DAILY", True, "daily")
 
 
 def test_section_limit_counts_open_sections(nt, nz, monkeypatch):
@@ -190,9 +193,56 @@ def test_imported_entities_chain(nt):
     assert not exists("comments", "ok", imported, "work-call")
 
 
-def test_task_reminder_on_new_task_only(nt, nz):
+def test_task_reminder_unless_task_has_one(nt, nz):
+    """New task: posted, reminders not fetched; imported before: posted if it has none"""
+    nt.records["/reminders"] = [{"task_id": "old"}]
     nt.api.TasksApi().post_task.return_value = NS(id=NEW)
     nz.task(PROJECT, "New", remind_at=5)
-    nz.task(PROJECT, "Old", remind_at=5)  # imported before
+    nt.fetch_all.assert_not_called()
+    nz.task(PROJECT, "Old", remind_at=5)
+    nz.task(PROJECT, "Pic", remind_at=6)
+    assert nt.fetch_all.call_count == 1
     posted = nt.api.RemindersApi().post_reminder.call_args_list
-    assert [(elt.args[0].task_id, elt.args[0].remind_at) for elt in posted] == [(NEW, 5)]
+    assert [(elt.args[0].task_id, elt.args[0].remind_at) for elt in posted] == [(NEW, 5), (OLD, 6)]
+
+
+def test_task_imported_before_gets_missing_responsibility_tag(nt, nz):
+    nt.records["/tag_assignments"] = [{"tag_id": "t" * 16, "task_id": "old"}]
+    for name in ("Old", "Pic"):
+        assert not nz.task(PROJECT, name, due=date(2026, 1, 1), assigned=True)[1]
+    posted = nt.api.TagAssignmentsApi().post_tag_assignment.call_args_list
+    assert [elt.args[0].task_id for elt in posted] == [OLD]
+
+
+def test_tags_visible_in_team_only(nt, nz, monkeypatch):
+    """Other teams' tags neither matched nor counted against team's limit"""
+    nt.records["/tags"] = [
+        {"id": "t" * 16, "name": "home", "team_id": None},
+        {"id": "u" * 16, "name": "work", "team_id": "team"},
+        {"id": "v" * 16, "name": "gym", "team_id": "other"},
+    ]
+    nz._limits = {"tags": 3}
+    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
+    nt.api.TagsApi().post_tag.return_value = NS(id=NEW)
+    assert nz.tags([("home", None), ("work", None), ("gym", None)]) == {
+        "home": "t" * 16,
+        "work": "u" * 16,
+        "gym": NEW,
+    }
+
+
+def test_project_group_refused_stops_before_project(nt, nz):
+    nz.group_id = None
+    nt.api.ProjectGroupsApi().post_project_group.side_effect = ValueError
+    with pytest.raises(ImportException, match="group"):
+        nz.project("New")
+    nt.api.ProjectsApi().post_project.assert_not_called()
+
+
+def test_project_outside_group_deleted(nt, nz):
+    nz.team_id = "t" * 16
+    nt.api.ProjectsApi().post_project.return_value = NS(id=NEW)
+    nt.api.GroupAssignmentsApi().post_group_assignment.side_effect = ValueError
+    with pytest.raises(ImportException, match="group"):
+        nz.project("New")
+    nt.api.ProjectsApi().delete_project_by_id.assert_called_once_with(NEW)

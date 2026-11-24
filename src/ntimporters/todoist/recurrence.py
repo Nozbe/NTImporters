@@ -57,8 +57,9 @@ LANGS = {"en", "pl"}
 
 
 def to_rrule(text: str | None, lang: str | None = "en") -> str | None:
-    """Todoist due.string in due.lang -> RRULE without DTSTART; None if unrecognised"""
-    if lang not in LANGS or not (rule := _rule(text)):
+    """Todoist due.string in due.lang -> RRULE without DTSTART; None if unrecognised or
+    repeating after completion ("every!": no RRULE equivalent)"""
+    if lang not in LANGS or "!" in (text or "") or not (rule := _rule(text)):
         return None
     text = f" {text.lower()} "
     if until := UNTIL.search(text):
@@ -69,7 +70,7 @@ def to_rrule(text: str | None, lang: str | None = "en") -> str | None:
 
 def _rule(text: str | None) -> str | None:
     """RRULE FREQ/INTERVAL/BY* part of due.string"""
-    text = TAIL.sub("", f" {(text or '').lower().replace('!', '')} ")
+    text = TAIL.sub("", f" {(text or '').lower()} ")
     tokens = [t for t in re.split(r"[\s,]+", NOISE.sub(" ", text)) if t and t not in FILLER]
     interval = 1
     # number is an interval only before a unit word: "27 jan", "1, 15" are dates

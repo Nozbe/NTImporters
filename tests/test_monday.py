@@ -14,10 +14,11 @@ from ntimporters.utils import ImportException
         (500, {}, "HTTP 500"),
         (200, {"errors": [{"message": "Bad query"}]}, "Bad query"),
         (429, {"errors": [{"extensions": {"code": "DAILY_LIMIT_EXCEEDED"}}]}, "daily limit"),
+        (502, ValueError("HTML page"), "HTTP 502"),
     ],
 )
 def test_req_raises(status, payload, message):
-    response = Mock(status_code=status, content=b"x", json=Mock(return_value=payload))
+    response = Mock(status_code=status, content=b"x", json=Mock(side_effect=[payload]))
     with (
         patch("requests.Session.post", return_value=response),
         pytest.raises(ImportException, match=message),

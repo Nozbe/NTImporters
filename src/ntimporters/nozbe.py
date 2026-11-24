@@ -79,19 +79,22 @@ def get_imported_entities(
 ) -> dict[str, dict]:
     """Ids of group's projects (and Single Tasks' tasks), in creation order: projects by name,
     sections and tasks by (project_id, name), comments by (task_id, body); 'open_sections':
-    project_id -> number of its non-archived sections.
+    project_id -> number of its non-archived sections; 'recurring': ids of tasks with recurrence.
     Only group's data is fetched; comments: those by author_id (importer posts as author)."""
     imported = {
         kind: defaultdict(deque) for kind in ("projects", "project_sections", "tasks", "comments")
-    } | {"open_sections": Counter()}
+    } | {"open_sections": Counter(), "recurring": set()}
 
     def _add(kind: str, records: list[dict], key: Callable):
         for record in sorted(records, key=lambda elt: elt.get("created_at") or 0):
             imported.get(kind)[key(record)].append(record.get("id"))
 
     def _add_tasks(project_id: str) -> set[str]:
-        tasks = fetch_all(nt_client, "/tasks", project_id=project_id, fields="id,name,created_at")
+        tasks = fetch_all(
+            nt_client, "/tasks", project_id=project_id, fields="id,name,created_at,recurrence_id"
+        )
         _add("tasks", tasks, lambda elt: (project_id, elt.get("name")))
+        imported.get("recurring").update(elt.get("id") for elt in tasks if elt.get("recurrence_id"))
         return {elt.get("id") for elt in tasks}
 
     project_ids = set()
@@ -284,6 +287,7 @@ class NozbeImport:
         """Id of project by name in import group; created and grouped if missing"""
         if project_id := exists("projects", name := trim(name), self.imported):
             return project_id
+        self._group()  # before the project: no project left outside the group
         project_id = self._post(
             f"project {name!r}",
             lambda: api.ProjectsApi(self.client).post_project(
@@ -309,8 +313,9 @@ class NozbeImport:
             self._add_to_group(project_id)
         return project_id
 
-    def _add_to_group(self, project_id: str):
-        """Add project to import group, created on first use"""
+    def _group(self) -> str:
+        """Id of import group, created on first use; ImportException if refused
+        (projects outside it would be duplicated by re-runs)"""
         self.group_id = self.group_id or self._post(
             f"group {self.group_name!r}",
             lambda: api.ProjectGroupsApi(self.client).post_project_group(
@@ -319,18 +324,27 @@ class NozbeImport:
                 )
             ),
         )
-        if self.group_id:
-            self._post(
-                f"project {project_id} in group",
-                lambda: api.GroupAssignmentsApi(self.client).post_group_assignment(
-                    models.GroupAssignment(
-                        id=id16(),
-                        object_id=project_id,
-                        group_id=self.group_id,
-                        group_type="project",
-                    )
-                ),
-            )
+        if not self.group_id:
+            raise ImportException(f"Can't create project group {self.group_name!r}")
+        return self.group_id
+
+    def _add_to_group(self, project_id: str):
+        """Add new project to import group; if refused, delete it (empty yet) and raise
+        ImportException, so a re-run doesn't duplicate it"""
+        if self._post(
+            f"project {project_id} in group",
+            lambda: api.GroupAssignmentsApi(self.client).post_group_assignment(
+                models.GroupAssignment(
+                    id=id16(), object_id=project_id, group_id=self._group(), group_type="project"
+                )
+            ),
+        ):
+            return
+        try:
+            api.ProjectsApi(self.client).delete_project_by_id(project_id)
+        except OpenApiException:
+            log.warning("project %s outside group not deleted", project_id, exc_info=True)
+        raise ImportException(f"Can't add project to group {self.group_name!r}")
 
     def section(
         self, project_id: str, name: str, position: float, archived: bool = False
@@ -356,7 +370,7 @@ class NozbeImport:
             ),
         )
         if section_id and not archived:
-            open_sections[project_id] += 1
+            open_sections[project_id] = open_sections.get(project_id, 0) + 1
         return section_id
 
     def task(
@@ -377,10 +391,10 @@ class NozbeImport:
         Due: see due_fields.
         Responsible only if due: given one, else author (+ 'missing responsibility' tag if
         assigned in source, i.e. assignee not mapped); always author in Single Tasks.
-        recurrence: (RRULE pattern, fallback comment), set on a new task with due.
-        remind_at: ms of an absolute reminder, set on a new task."""
-        if task_id := exists("tasks", name := trim(name), self.imported, project_id):
-            return task_id, False
+        recurrence: (RRULE pattern, fallback comment), set on a task with due.
+        remind_at: ms of an absolute reminder.
+        Task imported before: only tag, recurrence and reminder it lacks added (a run may stop
+        after posting the task)."""
         due_at, is_all_day = due_fields(due)
         missing_responsible = False
         if project_id == self.single_tasks_id:
@@ -389,35 +403,39 @@ class NozbeImport:
             responsible_id = None
         elif not responsible_id:
             responsible_id, missing_responsible = self.author_id, assigned
-        task_id = self._post(
-            f"task {name!r}",
-            lambda: api.TasksApi(self.client).post_task(
-                models.PostTaskRequest(
-                    id=id16(),
-                    name=name,
-                    project_id=project_id,
-                    project_section_id=section_id,
-                    project_position=1.0 if position is None else float(position),
-                    author_id=self.author_id,
-                    responsible_id=responsible_id,
-                    due_at=due_at,
-                    is_all_day=is_all_day,
-                    ended_at=ended_at,
-                    created_at=1,
-                    last_activity_at=1,
-                    is_followed=False,
-                    is_abandoned=False,
-                    missed_repeats=0,
-                    extra="",
-                )
-            ),
-        )
-        if task_id and missing_responsible:
-            self.assign_tags(task_id, [self._tag("missing responsibility")], is_new=True)
-        if task_id and recurrence and due_at is not None:
+        task_id = exists("tasks", name := trim(name), self.imported, project_id)
+        if is_new := not task_id:
+            task_id = self._post(
+                f"task {name!r}",
+                lambda: api.TasksApi(self.client).post_task(
+                    models.PostTaskRequest(
+                        id=id16(),
+                        name=name,
+                        project_id=project_id,
+                        project_section_id=section_id,
+                        project_position=1.0 if position is None else float(position),
+                        author_id=self.author_id,
+                        responsible_id=responsible_id,
+                        due_at=due_at,
+                        is_all_day=is_all_day,
+                        ended_at=ended_at,
+                        created_at=1,
+                        last_activity_at=1,
+                        is_followed=False,
+                        is_abandoned=False,
+                        missed_repeats=0,
+                        extra="",
+                    )
+                ),
+            )
+            if not task_id:
+                return None, False
+        if missing_responsible:
+            self.assign_tags(task_id, [self._tag("missing responsibility")], is_new=is_new)
+        if recurrence and due_at is not None and task_id not in self.imported.get("recurring"):
             pattern, fallback = recurrence
             self.recurrence(project_id, task_id, pattern, is_all_day, fallback)
-        if task_id and remind_at is not None:
+        if remind_at is not None and (is_new or task_id not in self._reminded):
             self._post(
                 f"reminder of task {task_id}",
                 lambda: api.RemindersApi(self.client).post_reminder(
@@ -430,7 +448,14 @@ class NozbeImport:
                     )
                 ),
             )
-        return task_id, task_id is not None
+        return task_id, is_new
+
+    @cached_property
+    def _reminded(self) -> set[str]:
+        """Ids of tasks having a reminder (/reminders filters by task only: all fetched once)"""
+        return {
+            elt.get("task_id") for elt in fetch_all(self.client, "/reminders", fields="task_id")
+        }
 
     def comment(self, task_id: str, body: str | None, file: File | None = None) -> str | None:
         """Id of comment, posted unless imported before; file attached unless it has one
@@ -517,10 +542,11 @@ class NozbeImport:
 
     @cached_property
     def _tags(self) -> dict[str, str]:
-        """Team tag name -> id; own posts added"""
+        """Name -> id of tags visible in team: private ones and team's; own posts added"""
         return {
             elt.get("name"): elt.get("id")
-            for elt in fetch_all(self.client, "/tags", fields="id,name")
+            for elt in fetch_all(self.client, "/tags", fields="id,name,team_id")
+            if elt.get("team_id") in (None, self.team_id)
         }
 
     def _tag(self, name: str, color: str | None = None) -> str | None:

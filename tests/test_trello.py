@@ -92,3 +92,19 @@ def test_req_raises(status, message):
         pytest.raises(ImportException, match=message),
     ):
         TrelloClient("key", "token")
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://trello.com/1/cards/c/attachments/a/download/f.png", True),
+        ("https://api.trello.com/x", True),
+        ("https://trello-attachments.s3.amazonaws.com/f.png", False),
+        ("https://eviltrello.com/x", False),
+        (None, False),
+    ],
+)
+def test_is_trello(url, expected):
+    from ntimporters.trello.importer import _is_trello
+
+    assert _is_trello(url) is expected

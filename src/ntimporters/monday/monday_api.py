@@ -39,7 +39,10 @@ class MondayClient:
                 json={"query": f"{{ complexity {{ query after reset_in_x_seconds }} {query} }}"},
                 timeout=60,
             )
-            data = resp.json() if resp.content else {}
+            try:
+                data = resp.json() if resp.content else {}
+            except ValueError:  # e.g. HTML error page: reported by status below
+                data = {}
             error = dig(data, "errors.0", {})
             code = dig(error, "extensions.code")
             if code == "DAILY_LIMIT_EXCEEDED":

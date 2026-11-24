@@ -34,7 +34,7 @@ def test_parse_due_empty():
 @pytest.mark.parametrize(
     "text, rrule",
     [
-        ("every! 3 days at 9am", "FREQ=DAILY;INTERVAL=3"),
+        ("every! 3 days at 9am", None),  # after completion: no RRULE
         ("every other monday", "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"),
         ("every mon, fri", "FREQ=WEEKLY;BYDAY=MO,FR"),
         ("every weekday", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"),
@@ -134,3 +134,10 @@ def test_comments_one_sync_grouped():
     for task_id in ("t1", "t2", "t3"):
         importer._import_comments(ctx, "nt", NS(id=task_id, description=""))
     ctx.todoist.get_comments.assert_called_once_with(task_id="t2")
+
+
+def test_comments_bad_note_falls_back_per_task():
+    """A note the SDK can't parse: None (all tasks fetch comments per task), not a crash"""
+    with patch("requests.Session.post") as post:
+        post.return_value.json.return_value = {"notes": [{"id": "1", "item_id": "t1"}]}
+        assert importer._comments("token") is None

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 import requests
+from dataclass_wizard.errors import JSONWizardError
 from todoist_api_python.api import TodoistAPI
 from todoist_api_python.models import Attachment, Comment, Due, Project, Task
 
@@ -119,7 +120,7 @@ def _comments(token: str) -> dict[str, list[Comment] | None] | None:
         for note in sync.get("notes") or []:
             if not note.get("is_deleted"):
                 comments[note.get("item_id")].append(Comment.from_dict(note))
-    except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
+    except (requests.RequestException, JSONWizardError, ValueError, TypeError, KeyError) as exc:
         log.warning("Todoist comments sync failed, fetching per task: %s", exc)
         return None
     return comments | dict.fromkeys(sync.get("incomplete_item_ids") or [])

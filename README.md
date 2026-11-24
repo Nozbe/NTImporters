@@ -57,7 +57,7 @@ You are welcome to contribute to **NTImporters** project by creating PRs with im
   nz.attachment(task_id, file["name"], file["url"], is_file=True, headers=auth_headers)
   ```
 
-  It keeps imported projects in the "Imported from <app>" group and makes re-runs safe: projects match by name, sections and tasks by name within their project, comments by body within their task. Shared rules live there too: limits (projects imported before don't count; sections checked per project as created), members matched by email (the token owner is the importing user), a new task's recurrence (`recurrence=(rrule, fallback comment)`) is set only if it is due, a due task goes to its mapped assignee, else to the author (with a "missing responsibility" tag if the source assignee couldn't be mapped), tasks without due date have no responsible person, Single Tasks are the author's.
+  It keeps imported projects in the "Imported from <app>" group and makes re-runs safe: projects match by name, sections and tasks by name within their project, comments by body within their task. Shared rules live there too: limits (projects imported before don't count; sections checked per project as created), members matched by email (the token owner is the importing user), a new task's recurrence (`recurrence=(rrule, fallback comment)`) is set only if it is due, a reminder (`remind_at=` ms) only on a new task, a due task goes to its mapped assignee, else to the author (with a "missing responsibility" tag if the source assignee couldn't be mapped), tasks without due date have no responsible person, Single Tasks are the author's.
 - Partial failures (one attachment, one tag) are logged as warnings on the `ntimporters` logger and don't stop the import
 
 ## Development
