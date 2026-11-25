@@ -7,7 +7,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ntimporters.nozbe import NozbeImport, due_fields, exists, get_imported_entities, run_safely
+from ntimporters.nozbe import (
+    NozbeImport,
+    due_fields,
+    exists,
+    get_imported_entities,
+    run_safely,
+    utc_until,
+)
 from ntimporters.utils import ImportException
 from openapi_client.exceptions import ApiException, OpenApiException
 
@@ -61,8 +68,8 @@ def test_run_safely():
         (PROJECT, 1, None, True, AUTHOR, True),  # due, assignee not mapped: author + tag
         (PROJECT, 1, None, False, AUTHOR, False),  # due, unassigned: author
         (PROJECT, 1, "m" * 16, True, "m" * 16, False),
-        (PROJECT, None, "m" * 16, True, None, False),  # no due: nobody
-        (PROJECT, None, None, True, None, False),
+        (PROJECT, None, "m" * 16, True, "m" * 16, False),  # no due, mapped: kept
+        (PROJECT, None, None, True, None, False),  # no due, unmapped: nobody
         (SAP, None, "m" * 16, True, AUTHOR, False),  # Single Tasks: always author
     ],
 )
@@ -239,10 +246,18 @@ def test_project_outside_group_deleted(nt, nz):
     nt.api.ProjectsApi().delete_project_by_id.assert_called_once_with(NEW)
 
 
-def test_post_plan_limit_stops_import(nt, nz):
-    nt.api.ProjectSectionsApi().post_project_section.side_effect = ApiException(status=402)
-    with pytest.raises(ImportException, match="Plan limit"):
+@pytest.mark.parametrize(
+    "status, match", [(402, "Plan limit"), (401, "refused"), (403, "refused"), (503, "failed")]
+)
+def test_post_stops_on_errors_every_write_gets(nt, nz, status, match):
+    nt.api.ProjectSectionsApi().post_project_section.side_effect = ApiException(status=status)
+    with pytest.raises(ImportException, match=match):
         nz.section(PROJECT, "New", 1)
+
+
+def test_post_record_refused_skipped(nt, nz):
+    nt.api.ProjectSectionsApi().post_project_section.side_effect = ApiException(status=400)
+    assert nz.section(PROJECT, "New", 1) is None
 
 
 def test_post_reply_unreadable_is_created(nt, nz):
@@ -278,7 +293,14 @@ def test_recurrence_put_keeps_task_flags(nt, nz):
     nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
     nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
     put = nt.api.TasksApi().put_task_by_id.call_args.args[1]
-    assert put.to_dict() == {"recurrence_id": "r" * 16, "is_all_day": True}
+    assert put.to_dict() == {"id": OLD, "recurrence_id": "r" * 16, "is_all_day": True}
+
+
+def test_recurrence_put_reply_unreadable_no_fallback(nt, nz):
+    nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
+    nt.api.TasksApi().put_task_by_id.side_effect = ValueError
+    nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
+    nt.api.CommentsApi().post_comment.assert_not_called()
 
 
 @pytest.mark.parametrize("pattern", [None, "FREQ=DAILY"])
@@ -292,8 +314,9 @@ def test_recurrence_fallback_comment(nt, nz, pattern):
     assert (posted.task_id, posted.body) == (OLD, "Todoist: tous les lundis")
 
 
-def test_time_zone_unreadable_user_is_utc(nt, nz):
-    nt.api.UsersApi().get_user_by_id.side_effect = OpenApiException
+@pytest.mark.parametrize("error", [OpenApiException, ValueError])
+def test_time_zone_unreadable_user_is_utc(nt, nz, error):
+    nt.api.UsersApi().get_user_by_id.side_effect = error
     assert nz.time_zone == "UTC"
 
 
@@ -322,3 +345,17 @@ def test_check_group(nt, nz, monkeypatch, group_id, has_projects, limit, groups,
     else:
         nz.check_group(has_projects)
     assert subscribe.called == (outcome is not None)
+
+
+@pytest.mark.parametrize(
+    "pattern, time_zone, expected",
+    [
+        ("FREQ=WEEKLY;UNTIL=20261231", "Europe/Warsaw", "FREQ=WEEKLY;UNTIL=20261231T225959Z"),
+        ("FREQ=DAILY;UNTIL=20261231;COUNT=2", "UTC", "FREQ=DAILY;UNTIL=20261231T235959Z;COUNT=2"),
+        ("FREQ=DAILY;UNTIL=20261231T120000Z", "UTC", "FREQ=DAILY;UNTIL=20261231T120000Z"),
+        ("FREQ=DAILY", "UTC", "FREQ=DAILY"),
+    ],
+)
+def test_utc_until(pattern, time_zone, expected):
+    """Date UNTIL: end of that day in user's zone, UTC (backend DTSTART has TZID)"""
+    assert utc_until(pattern, time_zone) == expected

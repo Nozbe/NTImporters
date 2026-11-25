@@ -2,6 +2,7 @@
 
 import itertools
 import json
+import re
 from contextlib import suppress
 from datetime import datetime
 
@@ -77,7 +78,8 @@ def _import_board(nz: NozbeImport, monday: MondayClient, board: dict, responsibl
         if nt_task_id:
             for update in item.get("comments") or []:
                 body = update.get("text_body")
-                nz.comment(nt_task_id, body and body.replace("* ", "- "))  # bullets -> markdown
+                # bullets at line start -> markdown
+                nz.comment(nt_task_id, body and re.sub(r"(?m)^(\s*)\* ", r"\1- ", body))
 
 
 def _thread(updates: list[dict]) -> list[dict]:

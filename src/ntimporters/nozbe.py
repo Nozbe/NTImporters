@@ -3,6 +3,7 @@
 import hashlib
 import itertools
 import json
+import re
 import shutil
 import tempfile
 from collections import defaultdict, deque
@@ -23,6 +24,7 @@ from ntimporters.utils import (
     session,
     subscribe_trial,
     trim,
+    zone,
 )
 from openapi_client import api, models
 from openapi_client.exceptions import ApiException, OpenApiException
@@ -158,6 +160,17 @@ def due_fields(due: date | datetime | None) -> tuple[int | None, bool]:
     return None, False
 
 
+def utc_until(pattern: str, time_zone: str) -> str:
+    """UNTIL=YYYYMMDD -> end of that day in time_zone, UTC. Backend: DTSTART has TZID, so a date
+    UNTIL is invalid and the task falls back to daily"""
+
+    def end(match: re.Match) -> str:
+        moment = datetime.combine(date.fromisoformat(match.group(1)), time.max, zone(time_zone))
+        return f"UNTIL={moment.astimezone(UTC):%Y%m%dT%H%M%SZ}"
+
+    return re.sub(r"UNTIL=(\d{8})(?![\dT])", end, pattern)
+
+
 def run_safely(import_data: Callable[[], object], **required) -> Exception | str | None:
     """None on success, else "Missing '<name>'" or raised exception (Nozbe4Backend reports)"""
     if missing := first((name for name, value in required.items() if not value), None):
@@ -196,8 +209,8 @@ class NozbeImport:
         self, what: str, send: Callable[[object], object], build: Callable[[], object]
     ) -> str | None:
         """id of record send(build()) created; None (logged) if invalid or refused.
-        Reply unreadable (ValueError after send): created, built id. 402 (plan limit): ImportException
-        (rest would be refused too)"""
+        Reply unreadable (ValueError after send): created, built id. 401, 402 (plan limit), 403, 5xx:
+        ImportException (rest would be refused too; backend retries import, re-run deduplicated)"""
         try:
             record = build()
         except ValueError:
@@ -206,8 +219,13 @@ class NozbeImport:
         try:
             return send(record).id
         except OpenApiException as exc:
-            if getattr(exc, "status", None) == 402:
-                raise ImportException(f"Plan limit reached: {what} not imported") from exc
+            match getattr(exc, "status", None):
+                case 402:
+                    raise ImportException(f"Plan limit reached: {what} not imported") from exc
+                case 401 | 403 as status:
+                    raise ImportException(f"Nozbe refused {what} ({status})") from exc
+                case int(status) if status >= 500:
+                    raise ImportException(f"Nozbe failed on {what} ({status})") from exc
             log.warning("%s not imported", what, exc_info=True)
         except ValueError:
             log.warning("%s: reply unreadable, created", what, exc_info=True)
@@ -236,7 +254,11 @@ class NozbeImport:
         Trial lifts all limits (-1), so no other limit is checked"""
         if self.group_id or not has_projects:
             return
-        team = api.TeamsApi(self.client).get_team_by_id(self.team_id)
+        try:
+            team = api.TeamsApi(self.client).get_team_by_id(self.team_id)
+        except ValueError:  # reply unreadable: limits unknown; group post's 402 stops import
+            log.warning("team %s not read, limits unchecked", self.team_id, exc_info=True)
+            return
         limits = json.loads(getattr(team, "limits", None) or "{}")
         if (limit := limits.get("project_groups", -1)) < 0:
             return
@@ -379,8 +401,8 @@ class NozbeImport:
         remind_at: int | None = None,
     ) -> tuple[str | None, bool]:
         """(id, is_new) of task by name in project; created if missing.
-        due: see due_fields. responsible: Single Tasks -> author; no due -> None; unmapped ->
-        author (+ 'missing responsibility' tag if assigned).
+        due: see due_fields. responsible: Single Tasks -> author; mapped -> kept, due or not;
+        unmapped: due -> author (+ 'missing responsibility' tag if assigned), no due -> None.
         recurrence: (RRULE pattern, fallback comment), open + due only. remind_at: ms, absolute.
         New Single Task: tagged group_name.
         Imported task: only missing tag, recurrence, reminder added (run may stop after post)."""
@@ -388,9 +410,7 @@ class NozbeImport:
         missing_responsible = False
         if project_id == self.single_tasks_id:
             responsible_id = self.author_id
-        elif due_at is None:
-            responsible_id = None
-        elif not responsible_id:
+        elif not responsible_id and due_at is not None:
             responsible_id, missing_responsible = self.author_id, assigned
         task_id = exists("tasks", name := trim(name), self.imported, project_id)
         if is_new := not task_id:
@@ -534,7 +554,7 @@ class NozbeImport:
         """importing user's time zone; UTC if unset or unreadable"""
         try:
             user = api.UsersApi(self.client).get_user_by_id(self.client.configuration.username)
-        except OpenApiException:
+        except OpenApiException, ValueError:
             log.warning("user's time zone not read, UTC used", exc_info=True)
             return "UTC"
         return getattr(user, "time_zone", None) or "UTC"
@@ -543,6 +563,7 @@ class NozbeImport:
         self, project_id: str, task_id: str, pattern: str | None, is_all_day: bool, fallback: str
     ):
         """RRULE pattern on task with due_at; fallback comment if None or refused"""
+        pattern = pattern and utc_until(pattern, self.time_zone)
         recurrence_id = pattern and self._post(
             f"recurrence {pattern!r}",
             api.TaskRecurrencesApi(self.client).post_task_recurrence,
@@ -555,6 +576,7 @@ class NozbeImport:
             # PUT /tasks resets is_all_day unless sent; None: flags left as they are
             lambda task: api.TasksApi(self.client).put_task_by_id(task_id, task),
             lambda: models.Task(
+                id=task_id,  # reply unreadable: PUT still counts as done
                 recurrence_id=recurrence_id,
                 is_all_day=is_all_day,
                 is_followed=None,
