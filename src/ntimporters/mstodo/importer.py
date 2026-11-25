@@ -1,10 +1,12 @@
 """Microsoft To Do -> Nozbe importer"""
 
-import html
+import calendar
 import itertools
 import json
 import re
 from datetime import date, datetime, timedelta
+
+from markdownify import markdownify
 
 from ntimporters.mstodo.mstodo_api import MSTodoClient
 from ntimporters.nozbe import NozbeImport, run_safely
@@ -18,15 +20,7 @@ SPEC = {
 }
 IMPORT_NAME = "Imported from Microsoft To Do"
 HIGH_IMPORTANCE = "high importance"
-DAYS = {
-    "monday": "MO",
-    "tuesday": "TU",
-    "wednesday": "WE",
-    "thursday": "TH",
-    "friday": "FR",
-    "saturday": "SA",
-    "sunday": "SU",
-}
+DAYS = {day.name.lower(): day.name[:2] for day in calendar.Day}  # Graph name -> RRULE: monday -> MO
 INDEX = {"first": 1, "second": 2, "third": 3, "fourth": 4, "last": -1}
 
 
@@ -170,13 +164,12 @@ def _import_task(
 
 
 def _text(body: dict | None) -> str:
-    """itemBody -> plain text"""
+    """itemBody -> text; html -> markdown (links, lists kept)"""
     content = dig(body, "content", "").replace("\r\n", "\n").replace("\r", "\n")
     if dig(body, "contentType") == "html":
         content = re.sub(r"(?is)<(head|style|script)\b.*?</\1>", "", content)
-        content = re.sub(r"(?i)<br\s*/?>|</(p|div|li|tr|h\d)>", "\n", content)
-        content = html.unescape(re.sub(r"<[^>]+>", "", content))
-        content = re.sub(r"\n\s*\n+", "\n\n", content)
+        content = markdownify(content, heading_style="ATX", bullets="-")
+        content = re.sub(r"\n\s*\n+", "\n\n", re.sub(r"[ \t]+\n", "\n", content))
     return content.strip()
 
 

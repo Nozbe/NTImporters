@@ -2,8 +2,9 @@
 
 import itertools
 import json
+from contextlib import suppress
+from datetime import datetime
 
-from dateutil.parser import isoparse
 from more_itertools import first_true
 
 from ntimporters.monday.monday_api import MondayClient
@@ -89,24 +90,29 @@ def _thread(updates: list[dict]) -> list[dict]:
     )
 
 
+def _value(column: dict | None):
+    """column's parsed JSON value (read with dig); None if none or unreadable"""
+    with suppress(ValueError):
+        return json.loads(dig(column, "value") or "null")
+    return None
+
+
 def _task(raw: dict, group: str | None, position: int) -> dict:
     """item/subitem -> task; due: sole dated date column; assigned: first set people column"""
     columns = raw.get("column_values") or []
     due = None
     match [col for col in columns if col.get("type") == "date" and col.get("text")]:
         case [column]:
-            try:
-                # value: UTC; text: account time zone
-                value = json.loads(column.get("value") or "{}")
+            value = _value(column)  # value: UTC; text: account time zone
+            day, moment = dig(value, "date"), dig(value, "time")
+            with suppress(ValueError):  # unreadable date: no due
                 due = (
-                    isoparse(f"{value.get('date')}T{value.get('time')}Z")
-                    if value.get("time")
-                    else isoparse(value.get("date") or column.get("text")).date()
+                    datetime.fromisoformat(f"{day}T{moment}Z")
+                    if moment
+                    else datetime.fromisoformat(day or column.get("text")).date()
                 )
-            except json.decoder.JSONDecodeError, ValueError:
-                pass
     people = first_true(columns, pred=lambda col: col.get("type") in PEOPLE and col.get("value"))
-    entries = dig(json.loads(people.get("value")) if people else {}, "personsAndTeams", [])
+    entries = dig(_value(people), "personsAndTeams", [])
     return {
         "id": raw.get("id"),
         "name": raw.get("name"),

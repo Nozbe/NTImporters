@@ -67,12 +67,11 @@ def test_req_paces_on_low_budget(monkeypatch):
 
 def test_paged():
     client = MondayClient("key")
-    client.limit = 2
-    pages = {1: [1, 2], 2: [3, 4], 3: [5]}
+    pages = {"1/2": [1, 2], "2/2": [3, 4], "3/2": [5]}
     with patch.object(
-        client, "_req", side_effect=lambda query: {"data": {"x": pages.get(int(query))}}
+        client, "_req", side_effect=lambda query: {"data": {"x": pages.get(query)}}
     ) as req:
-        assert client._paged(str, "data.x") == [1, 2, 3, 4, 5]
+        assert client._paged(lambda page, size: f"{page}/{size}", "data.x", 2) == [1, 2, 3, 4, 5]
     assert req.call_count == 3
 
 
@@ -93,6 +92,7 @@ PEOPLE = {
         ((DATE, PEOPLE), 1714557600000, False, ["7"], ["8"]),
         ((DATE | {"value": '{"date": "2024-05-01"}'},), 1714521600000, True, [], []),
         ((DATE, DATE), None, False, [], []),
+        ((PEOPLE | {"value": "{bad"},), None, False, [], []),  # unreadable: no assignees
     ],
 )
 def test_task(columns, due_at, is_all_day, assigned, teams):
@@ -138,6 +138,7 @@ def test_board_pages_and_orders():
         groups, items = client.board("b")
     tasks = _tasks(items)
     assert req.call_count == 3
+    assert "updates(limit:100 page:1)" in req.call_args_list[2].args[0]  # API max per page
     assert groups == [{"id": "g"}]
     assert [(t.get("id"), t.get("group"), t.get("position")) for t in tasks] == [
         (3, "h", 3),

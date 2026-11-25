@@ -3,7 +3,6 @@
 from datetime import date, datetime
 
 import asana
-from dateutil.parser import isoparse
 from more_itertools import first
 
 from ntimporters.nozbe import NozbeImport, run_safely
@@ -183,9 +182,9 @@ def _import_tasks(
 def _due(task: dict) -> date | datetime | None:
     """due_at datetime, else due_on date"""
     if due_at := task.get("due_at"):
-        return isoparse(due_at)
+        return datetime.fromisoformat(due_at)
     if due_on := task.get("due_on"):
-        return isoparse(due_on).date()
+        return date.fromisoformat(due_on)
     return None
 
 

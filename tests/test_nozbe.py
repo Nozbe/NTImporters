@@ -9,7 +9,7 @@ import pytest
 
 from ntimporters.nozbe import NozbeImport, due_fields, exists, get_imported_entities, run_safely
 from ntimporters.utils import ImportException
-from openapi_client.exceptions import OpenApiException
+from openapi_client.exceptions import ApiException, OpenApiException
 
 AUTHOR, SAP, PROJECT = "a" * 16, "s" * 16, "p" * 16
 OLD, OTHER, NEW, TAG, COMMENT = "o" * 16, "q" * 16, "n" * 16, "x" * 16, "c" * 16
@@ -118,10 +118,14 @@ def test_members(nz):
     assert nz.members({"c": "nobody@z.com"}, owner="c") == {"c": AUTHOR}  # token owner
 
 
-@pytest.mark.parametrize("attached, uploads", [([], 1), ([{"id": "f"}], 0)])
+@pytest.mark.parametrize(
+    "attached, uploads", [([], 1), ([NS(id="f")], 0), (ApiException(status=503), 0)]
+)
 def test_comment_imported_before_reuploads_missing_file(nt, nz, monkeypatch, attached, uploads):
-    """Existing comment: file uploaded iff it has none"""
-    nt.records[f"/comments/{COMMENT}/attachments"] = attached
+    """Existing comment: file uploaded iff it has none; unreadable: skipped"""
+    nt.api.AttachmentsApi().getattachments.side_effect = (
+        attached if isinstance(attached, Exception) else lambda _: attached
+    )
     monkeypatch.setattr(NozbeImport, "_upload", upload := MagicMock())
     assert nz.comment(OLD, "pic", ("https://f", "pic.png", None)) == COMMENT
     nt.api.CommentsApi().post_comment.assert_not_called()
@@ -214,7 +218,7 @@ def test_tags_visible_in_team_only(nt, nz):
 
 def test_project_group_refused_stops_before_project(nt, nz):
     nz.group_id = None
-    nt.api.ProjectGroupsApi().post_project_group.side_effect = ValueError
+    nt.api.ProjectGroupsApi().post_project_group.side_effect = ApiException(status=400)
     with pytest.raises(ImportException, match="group"):
         nz.project("New")
     nt.api.ProjectsApi().post_project.assert_not_called()
@@ -223,10 +227,24 @@ def test_project_group_refused_stops_before_project(nt, nz):
 def test_project_outside_group_deleted(nt, nz):
     nz.team_id = "t" * 16
     nt.api.ProjectsApi().post_project.return_value = NS(id=NEW)
-    nt.api.GroupAssignmentsApi().post_group_assignment.side_effect = ValueError
+    nt.api.GroupAssignmentsApi().post_group_assignment.side_effect = ApiException(status=400)
     with pytest.raises(ImportException, match="group"):
         nz.project("New")
     nt.api.ProjectsApi().delete_project_by_id.assert_called_once_with(NEW)
+
+
+def test_post_plan_limit_stops_import(nt, nz):
+    nt.api.ProjectSectionsApi().post_project_section.side_effect = ApiException(status=402)
+    with pytest.raises(ImportException, match="Plan limit"):
+        nz.section(PROJECT, "New", 1)
+
+
+def test_post_reply_unreadable_is_created(nt, nz):
+    """ValueError after send: record created, built id returned"""
+    nt.api.ProjectSectionsApi().post_project_section.side_effect = ValueError
+    section_id = nz.section(PROJECT, "New", 1)
+    sent = nt.api.ProjectSectionsApi().post_project_section.call_args.args[0]
+    assert section_id == sent.id
 
 
 def test_single_tasks_imported_only_if_tagged(nt):
@@ -255,6 +273,17 @@ def test_recurrence_put_keeps_task_flags(nt, nz):
     nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
     put = nt.api.TasksApi().put_task_by_id.call_args.args[1]
     assert put.to_dict() == {"recurrence_id": "r" * 16, "is_all_day": True}
+
+
+@pytest.mark.parametrize("pattern", [None, "FREQ=DAILY"])
+def test_recurrence_fallback_comment(nt, nz, pattern):
+    """Unparsed (None) or refused pattern: source text as comment"""
+    nt.api.TaskRecurrencesApi().post_task_recurrence.side_effect = OpenApiException
+    nz.recurrence(PROJECT, OLD, pattern, True, "Todoist: tous les lundis")
+    assert nt.api.TaskRecurrencesApi().post_task_recurrence.called == bool(pattern)
+    nt.api.TasksApi().put_task_by_id.assert_not_called()
+    posted = nt.api.CommentsApi().post_comment.call_args.args[0]
+    assert (posted.task_id, posted.body) == (OLD, "Todoist: tous les lundis")
 
 
 def test_time_zone_unreadable_user_is_utc(nt, nz):

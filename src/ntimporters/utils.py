@@ -4,13 +4,13 @@ import logging
 import random
 import string
 from collections.abc import Iterable
-from datetime import UTC
+from contextlib import suppress
+from datetime import UTC, datetime
 from os import getenv
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
-from dateutil.parser import isoparse
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -61,6 +61,12 @@ class NozbeRetry(CappedRetry):
         return bool(self.status_forcelist and status_code in self.status_forcelist)
 
 
+def nozbe_headers() -> dict[str, str]:
+    """headers of every Nozbe request: API version, dev token if set"""
+    devtoken = getenv("DEV_ACCESS_TOKEN")
+    return {"Api-Version": "current"} | ({"X-DevToken": devtoken} if devtoken else {})
+
+
 def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
     """429: <= 36 retries, first at once, then 10 s or Retry-After (<= MAX_RETRY_AFTER);
     connect errors 3x; read errors 3x, not POST"""
@@ -81,9 +87,8 @@ def nt_api_client(nt_auth_token: str) -> nt.ApiClient:
         raise_on_status=False,
     )
     client = nt.ApiClient(configuration)
-    client.set_default_header("Api-Version", "current")
-    if devtoken := getenv("DEV_ACCESS_TOKEN"):
-        client.set_default_header("X-DevToken", devtoken)
+    for name, value in nozbe_headers().items():
+        client.set_default_header(name, value)
     return client
 
 
@@ -119,7 +124,7 @@ def subscribe_trial(api_key: str, nt_team_id: str) -> bool:
     resp = requests.patch(
         "/".join((API_HOST.removesuffix("/api"), "teams", nt_team_id, "plan")),
         json={"plan_type": "trial", "is_recurring": False},  # plan sized by team's members
-        headers={"Authorization": f"Apikey {api_key}", "API-Version": "current"},
+        headers={"Authorization": f"Apikey {api_key}"} | nozbe_headers(),
         timeout=60,
     )
     return resp.status_code == 200
@@ -142,17 +147,16 @@ def trim(name: str | None) -> str:
     return (name or "")[:255] or "Untitled"
 
 
-def parse_timestamp(datetime: str | None) -> int | None:
+def parse_timestamp(text: str | None) -> int | None:
     """ISO date/datetime -> ms; date-only or naive as UTC"""
-    if not datetime:
+    if not text:
         return None
-    moment = isoparse(datetime)
+    moment = datetime.fromisoformat(text)
     return int((moment if moment.tzinfo else moment.replace(tzinfo=UTC)).timestamp() * 1000)
 
 
 def zone(name: str) -> ZoneInfo:
     """UTC if unknown"""
-    try:
+    with suppress(ZoneInfoNotFoundError, ValueError):
         return ZoneInfo(name)
-    except ZoneInfoNotFoundError, ValueError:
-        return ZoneInfo("UTC")
+    return ZoneInfo("UTC")

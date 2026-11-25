@@ -192,13 +192,27 @@ class NozbeImport:
             (self.single_tasks_id, self._tasks_tagged(mark)) if mark else None,
         )
 
-    def _post(self, what: str, call: Callable[[], object]) -> str | None:
-        """id of record created by call; None (logged) if refused"""
+    def _post(
+        self, what: str, send: Callable[[object], object], build: Callable[[], object]
+    ) -> str | None:
+        """id of record send(build()) created; None (logged) if invalid or refused.
+        Reply unreadable (ValueError after send): created, built id. 402 (plan limit): ImportException
+        (rest would be refused too)"""
         try:
-            return call().id
-        except OpenApiException, ValueError:
-            log.warning("%s not imported", what, exc_info=True)
+            record = build()
+        except ValueError:
+            log.warning("%s not imported: invalid", what, exc_info=True)
             return None
+        try:
+            return send(record).id
+        except OpenApiException as exc:
+            if getattr(exc, "status", None) == 402:
+                raise ImportException(f"Plan limit reached: {what} not imported") from exc
+            log.warning("%s not imported", what, exc_info=True)
+        except ValueError:
+            log.warning("%s: reply unreadable, created", what, exc_info=True)
+            return getattr(record, "id", None)
+        return None
 
     @cached_property
     def _team_projects(self) -> list[dict]:
@@ -278,23 +292,22 @@ class NozbeImport:
         self._group()  # first: no project outside group
         project_id = self._post(
             f"project {name!r}",
-            lambda: api.ProjectsApi(self.client).post_project(
-                models.Project(
-                    id=id16(),
-                    name=name,
-                    team_id=self.team_id,
-                    author_id=self.author_id,
-                    created_at=1,
-                    last_event_at=1,
-                    ended_at=1 if ended else None,
-                    color=color,
-                    description=description or "",
-                    is_favorite=is_favorite,
-                    is_open=is_open,
-                    is_template=False,
-                    sidebar_position=1.0,
-                    extra="",
-                )
+            api.ProjectsApi(self.client).post_project,
+            lambda: models.Project(
+                id=id16(),
+                name=name,
+                team_id=self.team_id,
+                author_id=self.author_id,
+                created_at=1,
+                last_event_at=1,
+                ended_at=1 if ended else None,
+                color=color,
+                description=description or "",
+                is_favorite=is_favorite,
+                is_open=is_open,
+                is_template=False,
+                sidebar_position=1.0,
+                extra="",
             ),
         )
         if project_id:
@@ -306,10 +319,9 @@ class NozbeImport:
         (ungrouped projects duplicate on re-run)"""
         self.group_id = self.group_id or self._post(
             f"group {self.group_name!r}",
-            lambda: api.ProjectGroupsApi(self.client).post_project_group(
-                models.ProjectGroup(
-                    id=id16(), name=self.group_name, team_id=self.team_id, is_private=True
-                )
+            api.ProjectGroupsApi(self.client).post_project_group,
+            lambda: models.ProjectGroup(
+                id=id16(), name=self.group_name, team_id=self.team_id, is_private=True
             ),
         )
         if not self.group_id:
@@ -321,10 +333,9 @@ class NozbeImport:
         ImportException (re-run would duplicate)"""
         if self._post(
             f"project {project_id} in group",
-            lambda: api.GroupAssignmentsApi(self.client).post_group_assignment(
-                models.GroupAssignment(
-                    id=id16(), object_id=project_id, group_id=self._group(), group_type="project"
-                )
+            api.GroupAssignmentsApi(self.client).post_group_assignment,
+            lambda: models.GroupAssignment(
+                id=id16(), object_id=project_id, group_id=self._group(), group_type="project"
             ),
         ):
             return
@@ -342,15 +353,14 @@ class NozbeImport:
             return section_id
         return self._post(
             f"section {name!r}",
-            lambda: api.ProjectSectionsApi(self.client).post_project_section(
-                models.ProjectSection(
-                    id=id16(),
-                    project_id=project_id,
-                    name=name,
-                    created_at=1,
-                    archived_at=1 if archived else None,
-                    position=float(position),
-                )
+            api.ProjectSectionsApi(self.client).post_project_section,
+            lambda: models.ProjectSection(
+                id=id16(),
+                project_id=project_id,
+                name=name,
+                created_at=1,
+                archived_at=1 if archived else None,
+                position=float(position),
             ),
         )
 
@@ -386,25 +396,24 @@ class NozbeImport:
         if is_new := not task_id:
             task_id = self._post(
                 f"task {name!r}",
-                lambda: api.TasksApi(self.client).post_task(
-                    models.PostTaskRequest(
-                        id=id16(),
-                        name=name,
-                        project_id=project_id,
-                        project_section_id=section_id,
-                        project_position=1.0 if position is None else float(position),
-                        author_id=self.author_id,
-                        responsible_id=responsible_id,
-                        due_at=due_at,
-                        is_all_day=is_all_day,
-                        ended_at=ended_at,
-                        created_at=1,
-                        last_activity_at=1,
-                        is_followed=False,
-                        is_abandoned=False,
-                        missed_repeats=0,
-                        extra="",
-                    )
+                api.TasksApi(self.client).post_task,
+                lambda: models.PostTaskRequest(
+                    id=id16(),
+                    name=name,
+                    project_id=project_id,
+                    project_section_id=section_id,
+                    project_position=1.0 if position is None else float(position),
+                    author_id=self.author_id,
+                    responsible_id=responsible_id,
+                    due_at=due_at,
+                    is_all_day=is_all_day,
+                    ended_at=ended_at,
+                    created_at=1,
+                    last_activity_at=1,
+                    is_followed=False,
+                    is_abandoned=False,
+                    missed_repeats=0,
+                    extra="",
                 ),
             )
             if not task_id:
@@ -424,14 +433,13 @@ class NozbeImport:
         if remind_at is not None and (is_new or task_id not in self._reminded):
             self._post(
                 f"reminder of task {task_id}",
-                lambda: api.RemindersApi(self.client).post_reminder(
-                    models.Reminder(
-                        id=id16(),
-                        task_id=task_id,
-                        remind_at=remind_at,
-                        is_relative=False,
-                        is_all_day=False,
-                    )
+                api.RemindersApi(self.client).post_reminder,
+                lambda: models.Reminder(
+                    id=id16(),
+                    task_id=task_id,
+                    remind_at=remind_at,
+                    is_relative=False,
+                    is_all_day=False,
                 ),
             )
         return task_id, is_new
@@ -447,26 +455,34 @@ class NozbeImport:
         """comment id; posted unless imported; file attached unless present
         (run may stop between post and upload)"""
         if comment_id := exists("comments", body := body or "…", self.imported, task_id):
-            if file and not fetch_all(self.client, f"/comments/{comment_id}/attachments"):
+            if file and not self._has_attachment(comment_id):
                 self._upload(comment_id, *file)
             return comment_id
         comment_id = self._post(
             "comment",
-            lambda: api.CommentsApi(self.client).post_comment(
-                models.Comment(
-                    is_team=False,
-                    is_pinned=False,
-                    body=body,
-                    task_id=task_id,
-                    author_id=self.author_id,
-                    created_at=1,
-                    extra="",
-                )
+            api.CommentsApi(self.client).post_comment,
+            lambda: models.Comment(
+                id=id16(),
+                is_team=False,
+                is_pinned=False,
+                body=body,
+                task_id=task_id,
+                author_id=self.author_id,
+                created_at=1,
+                extra="",
             ),
         )
         if comment_id and file:
             self._upload(comment_id, *file)
         return comment_id
+
+    def _has_attachment(self, comment_id: str) -> bool:
+        """comment has attachment; unreadable: True (logged; upload skipped, as if refused)"""
+        try:
+            return bool(api.AttachmentsApi(self.client).getattachments(comment_id))
+        except OpenApiException, ValueError:
+            log.warning("attachments of comment %s not read", comment_id, exc_info=True)
+            return True
 
     @cached_property
     def _downloads(self) -> requests.Session:
@@ -523,23 +539,20 @@ class NozbeImport:
         """RRULE pattern on task with due_at; fallback comment if None or refused"""
         recurrence_id = pattern and self._post(
             f"recurrence {pattern!r}",
-            lambda: api.TaskRecurrencesApi(self.client).post_task_recurrence(
-                models.TaskRecurrence(
-                    id=id16(), project_id=project_id, current_task_id=task_id, pattern=pattern
-                )
+            api.TaskRecurrencesApi(self.client).post_task_recurrence,
+            lambda: models.TaskRecurrence(
+                id=id16(), project_id=project_id, current_task_id=task_id, pattern=pattern
             ),
         )
         if not recurrence_id or not self._post(
             f"recurrence of task {task_id}",
             # PUT /tasks resets is_all_day unless sent; None: flags left as they are
-            lambda: api.TasksApi(self.client).put_task_by_id(
-                task_id,
-                models.Task(
-                    recurrence_id=recurrence_id,
-                    is_all_day=is_all_day,
-                    is_followed=None,
-                    is_abandoned=None,
-                ),
+            lambda task: api.TasksApi(self.client).put_task_by_id(task_id, task),
+            lambda: models.Task(
+                recurrence_id=recurrence_id,
+                is_all_day=is_all_day,
+                is_followed=None,
+                is_abandoned=None,
             ),
         ):
             self.comment(task_id, fallback)
@@ -558,9 +571,8 @@ class NozbeImport:
         if (name := trim(name)) not in self._tags and (
             tag_id := self._post(
                 f"tag {name!r}",
-                lambda: api.TagsApi(self.client).post_tag(
-                    models.Tag(id=id16(), name=name, team_id=None, color=map_color(color))
-                ),
+                api.TagsApi(self.client).post_tag,
+                lambda: models.Tag(id=id16(), name=name, team_id=None, color=map_color(color)),
             )
         ):
             self._tags[name] = tag_id
@@ -591,7 +603,8 @@ class NozbeImport:
             if is_new or task_id not in self._tasks_tagged(tag_id):
                 self._post(
                     f"tag {tag_id} on task {task_id}",
-                    lambda tag_id=tag_id: api.TagAssignmentsApi(self.client).post_tag_assignment(
-                        models.TagAssignment(id=id16(), tag_id=tag_id, task_id=task_id)
+                    api.TagAssignmentsApi(self.client).post_tag_assignment,
+                    lambda tag_id=tag_id: models.TagAssignment(
+                        id=id16(), tag_id=tag_id, task_id=task_id
                     ),
                 )

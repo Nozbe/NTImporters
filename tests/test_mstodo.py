@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from dateutil.rrule import rrulestr
 
-from ntimporters.mstodo.importer import _import_comments, _remind_at, parse_due, to_rrule
+from ntimporters.mstodo.importer import _import_comments, _remind_at, _text, parse_due, to_rrule
 from ntimporters.mstodo.mstodo_api import MSTodoClient
 from ntimporters.nozbe import due_fields
 
@@ -130,3 +130,23 @@ def test_comments_from_expanded_task():
 )
 def test_remind_at(task, expected):
     assert _remind_at(task) == expected
+
+
+@pytest.mark.parametrize(
+    "body, text",
+    [
+        ({"contentType": "text", "content": "a\r\nb "}, "a\nb"),
+        (
+            {
+                "contentType": "html",
+                "content": "<html><head><style>p{}</style></head><body><p>Buy <b>milk</b> &amp; "
+                '<a href="https://x.com">eggs</a><br>now</p><ul><li>one</li><li>two</li></ul>',
+            },
+            "Buy **milk** & [eggs](https://x.com)\nnow\n\n- one\n- two",
+        ),
+        (None, ""),
+    ],
+)
+def test_text(body, text):
+    """html -> markdown: links, lists kept; head/style dropped"""
+    assert _text(body) == text

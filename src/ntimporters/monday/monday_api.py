@@ -3,6 +3,7 @@
 import itertools
 import time
 from collections.abc import Callable
+from contextlib import suppress
 
 from ntimporters.utils import ImportException, dig, session
 
@@ -18,7 +19,8 @@ class MondayClient:
     api_path = "https://api.monday.com/v2"
     limit = 300
     page_limit = 100
-    updates_limit = 20
+    updates_limit = 20  # nested per item
+    updates_page = 100  # API maximum per updates page
 
     def __init__(self, app_key):
         self.headers = {"Authorization": app_key}
@@ -37,10 +39,9 @@ class MondayClient:
                 json={"query": f"{{ complexity {{ query after reset_in_x_seconds }} {query} }}"},
                 timeout=60,
             )
-            try:
+            data = {}
+            with suppress(ValueError):  # e.g. HTML error page; status check reports it
                 data = resp.json() if resp.content else {}
-            except ValueError:  # e.g. HTML error page; status check reports it
-                data = {}
             error = dig(data, "errors.0", {})
             code = dig(error, "extensions.code")
             if code == "DAILY_LIMIT_EXCEEDED":
@@ -58,12 +59,12 @@ class MondayClient:
             return data
         raise ImportException("Monday API: rate limit not lifted")
 
-    def _paged(self, query: Callable[[int], str], path: str) -> list[dict]:
-        """records at path of query(page), pages 1.. until short"""
+    def _paged(self, query: Callable[[int, int], str], path: str, size: int) -> list[dict]:
+        """records at path of query(page, size), pages 1.. until one is short"""
         records = []
         for page in itertools.count(1):
-            records += (batch := dig(self._req(query(page)), path, []))
-            if len(batch) < self.limit:
+            records += (batch := dig(self._req(query(page, size)), path, []))
+            if len(batch) < size:
                 return records
 
     def projects(self) -> list[dict]:
@@ -71,11 +72,12 @@ class MondayClient:
         return [
             board
             for board in self._paged(
-                lambda page: (
-                    f"boards(state:all limit:{self.limit} page:{page})"
+                lambda page, size: (
+                    f"boards(state:all limit:{size} page:{page})"
                     "{name,id,state,description,board_kind,type}"
                 ),
                 "data.boards",
+                self.limit,
             )
             if board.get("type") == "board"
         ]
@@ -86,11 +88,12 @@ class MondayClient:
         if len(updates) < self.updates_limit:
             return updates
         return self._paged(
-            lambda page: (
-                f"items(ids:{raw.get('id')}) {{ updates(limit:{self.limit} page:{page})"
+            lambda page, size: (
+                f"items(ids:{raw.get('id')}) {{ updates(limit:{size} page:{page})"
                 f" {{ {UPDATE_FIELDS} }} }}"
             ),
             "data.items.0.updates",
+            self.updates_page,
         )
 
     def board(self, project_id: str) -> tuple[list[dict], list[dict]]:

@@ -3,6 +3,7 @@
 import itertools
 import time
 from collections import defaultdict
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime
 from operator import attrgetter
@@ -96,12 +97,11 @@ def _import_data(nz: NozbeImport, todoist, todoist_token: str):
 
 def _todoist_user(token: str) -> dict:
     """token owner; {}: request failed"""
-    try:
+    with suppress(requests.RequestException):
         response = session({"Authorization": f"Bearer {token}"}).get(f"{API_URL}/user", timeout=30)
         response.raise_for_status()
         return response.json()
-    except requests.RequestException:
-        return {}
+    return {}
 
 
 def _comments(token: str) -> dict[str, list[Comment] | None] | None:

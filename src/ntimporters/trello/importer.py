@@ -1,6 +1,7 @@
 """Trello -> Nozbe importer"""
 
-from dateutil.parser import isoparse
+from datetime import datetime
+
 from more_itertools import first_true
 
 from ntimporters.nozbe import NozbeImport, run_safely
@@ -72,7 +73,7 @@ def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsibl
                 card.get("name", ""),
                 section_id=section_id,
                 position=card_position,
-                due=isoparse(due) if due else None,
+                due=datetime.fromisoformat(due) if due else None,
                 responsible_id=first_true(map(responsible.get, card.get("idMembers") or [])),
                 assigned=bool(card.get("idMembers")),
                 ended_at=parse_timestamp(due) if card.get("dueComplete") else None,
