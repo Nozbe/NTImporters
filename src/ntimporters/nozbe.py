@@ -12,7 +12,7 @@ from functools import cached_property
 from pathlib import Path
 
 import requests
-from more_itertools import first, unique_everseen
+from more_itertools import first, first_true, unique_everseen
 
 from ntimporters.utils import (
     ImportException,
@@ -451,10 +451,16 @@ class NozbeImport:
             elt.get("task_id") for elt in fetch_all(self.client, "/reminders", fields="task_id")
         }
 
-    def comment(self, task_id: str, body: str | None, file: File | None = None) -> str | None:
-        """comment id; posted unless imported; file attached unless present
-        (run may stop between post and upload)"""
-        if comment_id := exists("comments", body := body or "…", self.imported, task_id):
+    def comment(
+        self, task_id: str, body: str | None, file: File | None = None, former: Iterable[str] = ()
+    ) -> str | None:
+        """comment id; posted unless imported (as body or a former body: earlier import format);
+        file attached unless present (run may stop between post and upload)"""
+        body = body or "…"
+        if comment_id := first_true(
+            exists("comments", text, self.imported, task_id)
+            for text in dict.fromkeys((body, *former))
+        ):
             if file and not self._has_attachment(comment_id):
                 self._upload(comment_id, *file)
             return comment_id

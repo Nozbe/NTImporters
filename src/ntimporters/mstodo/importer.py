@@ -1,6 +1,7 @@
 """Microsoft To Do -> Nozbe importer"""
 
 import calendar
+import html
 import itertools
 import json
 import re
@@ -163,13 +164,19 @@ def _import_task(
     _import_comments(nz, todo, list_id, nt_task_id, task)
 
 
-def _text(body: dict | None) -> str:
-    """itemBody -> text; html -> markdown (links, lists kept)"""
+def _text(body: dict | None, markdown: bool = True) -> str:
+    """itemBody -> text; html -> markdown (links, lists kept), else plain text (earlier imports)"""
     content = dig(body, "content", "").replace("\r\n", "\n").replace("\r", "\n")
     if dig(body, "contentType") == "html":
         content = re.sub(r"(?is)<(head|style|script)\b.*?</\1>", "", content)
-        content = markdownify(content, heading_style="ATX", bullets="-")
-        content = re.sub(r"\n\s*\n+", "\n\n", re.sub(r"[ \t]+\n", "\n", content))
+        if markdown:
+            content = re.sub(
+                r"[ \t]+\n", "\n", markdownify(content, heading_style="ATX", bullets="-")
+            )
+        else:
+            content = re.sub(r"(?i)<br\s*/?>|</(p|div|li|tr|h\d)>", "\n", content)
+            content = html.unescape(re.sub(r"<[^>]+>", "", content))
+        content = re.sub(r"\n\s*\n+", "\n\n", content)
     return content.strip()
 
 
@@ -179,7 +186,8 @@ def _import_comments(
     """body, checklist, linked resources, file attachments -> task"""
     task_id = task.get("id")
     if body := _text(task.get("body")):
-        nz.comment(nt_task_id, body)
+        # earlier imports posted plain text: matched, not posted again
+        nz.comment(nt_task_id, body, former=[_text(task.get("body"), markdown=False)])
     if items := task.get("checklistItems"):
         nz.comment(
             nt_task_id,

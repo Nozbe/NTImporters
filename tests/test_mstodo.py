@@ -150,3 +150,11 @@ def test_remind_at(task, expected):
 def test_text(body, text):
     """html -> markdown: links, lists kept; head/style dropped"""
     assert _text(body) == text
+
+
+def test_text_plain_as_earlier_imports():
+    body = {
+        "contentType": "html",
+        "content": '<p>See <a href="https://x.com">site</a></p><ul><li>a</li></ul>',
+    }
+    assert _text(body, markdown=False) == "See site\na"

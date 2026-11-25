@@ -118,6 +118,12 @@ def test_members(nz):
     assert nz.members({"c": "nobody@z.com"}, owner="c") == {"c": AUTHOR}  # token owner
 
 
+def test_comment_matches_former_body(nt, nz):
+    """Imported in earlier format: matched, not posted"""
+    assert nz.comment(OLD, "**pic**", former=["pic"]) == COMMENT
+    nt.api.CommentsApi().post_comment.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "attached, uploads", [([], 1), ([NS(id="f")], 0), (ApiException(status=503), 0)]
 )
