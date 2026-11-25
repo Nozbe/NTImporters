@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from operator import attrgetter
 from pathlib import Path
-from urllib.parse import urlparse
 
 import httpx
 import requests
@@ -17,7 +16,7 @@ from todoist_api_python.models import Attachment, Comment, Due, Project, Task
 
 from ntimporters.nozbe import File, NozbeImport, run_safely
 from ntimporters.todoist.recurrence import to_rrule
-from ntimporters.utils import dig, log, session, zone
+from ntimporters.utils import dig, log, on_host, session, zone
 
 SPEC = {
     "code": "todoist",
@@ -80,7 +79,7 @@ def run_import(nt_auth_token: str, auth_token: str, team_id: str) -> Exception |
 def _import_data(nz: NozbeImport, todoist, todoist_token: str):
     """projects, labels, comments, tasks"""
     projects = unpack(todoist.get_projects())
-    nz.check_open_projects(project.name for project in projects if not project.is_inbox_project)
+    nz.check_group(any(not project.is_inbox_project for project in projects))
     user = _todoist_user(todoist_token)
     ctx = Ctx(
         nz=nz,
@@ -197,19 +196,14 @@ def _import_comments(ctx: Ctx, nt_task_id: str, task: Task):
             ctx.nz.comment(nt_task_id, url)
 
 
-def _file_name(attachment: Attachment | None) -> str | None:
-    """basename"""
-    return attachment and Path(attachment.file_name or attachment.title or "attachment").name
-
-
 def _file(ctx: Ctx, attachment: Attachment | None) -> File | None:
     """(url, name, headers); token only to *.todoist.com"""
     if not (attachment and attachment.file_url):
         return None
-    host = urlparse(attachment.file_url).hostname or ""
-    is_todoist = host == "todoist.com" or host.endswith(".todoist.com")
     return (
         attachment.file_url,
-        _file_name(attachment),
-        {"Authorization": f"Bearer {ctx.todoist_token}"} if is_todoist else None,
+        Path(attachment.file_name or attachment.title or "attachment").name,
+        {"Authorization": f"Bearer {ctx.todoist_token}"}
+        if on_host(attachment.file_url, "todoist.com")
+        else None,
     )

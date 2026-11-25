@@ -34,9 +34,7 @@ def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Exception | st
 def _import_data(nz: NozbeImport, monday: MondayClient):
     """active boards -> projects, groups -> sections, items -> tasks"""
     boards = [board for board in monday.projects() if board.get("state") == "active"]
-    nz.check_open_projects(
-        board.get("name") for board in boards if board.get("board_kind") == "public"
-    )
+    nz.check_group(bool(boards))
     responsible = nz.members(monday.users(), owner=monday.me_id())
     for board in boards:
         _import_board(nz, monday, board, responsible)
@@ -77,12 +75,8 @@ def _import_board(nz: NozbeImport, monday: MondayClient, board: dict, responsibl
         )
         if nt_task_id:
             for update in item.get("comments") or []:
-                nz.comment(nt_task_id, format_body(update.get("text_body")))
-
-
-def format_body(body: str | None) -> str | None:
-    """Monday bullets -> markdown"""
-    return body and body.replace("* ", "- ")
+                body = update.get("text_body")
+                nz.comment(nt_task_id, body and body.replace("* ", "- "))  # bullets -> markdown
 
 
 def _thread(updates: list[dict]) -> list[dict]:
@@ -127,10 +121,7 @@ def _task(raw: dict, group: str | None, position: int) -> dict:
 
 def _tasks(items: list[dict]) -> list[dict]:
     """items, each then its subitems; positions 1.. in that order; returned reversed"""
-    position = itertools.count(1)
-    tasks = [
-        _task(raw, dig(item, "group.id"), next(position))
-        for item in items
-        for raw in [item, *(item.get("subitems") or [])]
-    ]
-    return tasks[::-1]
+    rows = [(raw, item) for item in items for raw in [item, *(item.get("subitems") or [])]]
+    return [
+        _task(raw, dig(item, "group.id"), position) for position, (raw, item) in enumerate(rows, 1)
+    ][::-1]

@@ -6,6 +6,7 @@ import string
 from collections.abc import Iterable
 from datetime import UTC
 from os import getenv
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
@@ -117,11 +118,17 @@ def subscribe_trial(api_key: str, nt_team_id: str) -> bool:
     """True iff trial subscribed"""
     resp = requests.patch(
         "/".join((API_HOST.removesuffix("/api"), "teams", nt_team_id, "plan")),
-        json={"members_len": 1, "plan_type": "trial", "is_recurring": False, "creds": 0},
+        json={"plan_type": "trial", "is_recurring": False},  # plan sized by team's members
         headers={"Authorization": f"Apikey {api_key}", "API-Version": "current"},
         timeout=60,
     )
     return resp.status_code == 200
+
+
+def on_host(url: str | None, domain: str) -> bool:
+    """url's host is domain or its subdomain"""
+    host = urlparse(url or "").hostname or ""
+    return host == domain or host.endswith(f".{domain}")
 
 
 def map_color(color: str | None) -> Color:

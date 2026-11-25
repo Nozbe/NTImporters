@@ -110,7 +110,7 @@ def test_req_raises(status, message):
         (None, False),
     ],
 )
-def test_is_trello(url, expected):
-    from ntimporters.trello.importer import _is_trello
+def test_on_host(url, expected):
+    from ntimporters.utils import on_host
 
-    assert _is_trello(url) is expected
+    assert on_host(url, "trello.com") is expected

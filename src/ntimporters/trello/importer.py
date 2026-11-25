@@ -1,13 +1,11 @@
 """Trello -> Nozbe importer"""
 
-from urllib.parse import urlparse
-
 from dateutil.parser import isoparse
 from more_itertools import first_true
 
 from ntimporters.nozbe import NozbeImport, run_safely
 from ntimporters.trello.trello_api import TrelloClient, checklists
-from ntimporters.utils import dig, map_color, parse_timestamp
+from ntimporters.utils import dig, map_color, on_host, parse_timestamp
 
 SPEC = {
     "code": "trello",
@@ -35,7 +33,7 @@ def run_import(
 def _import_data(nz: NozbeImport, trello: TrelloClient):
     """boards -> projects, lists -> sections, cards -> tasks"""
     boards = trello.projects()
-    nz.check_open_projects(board.get("name") for board in boards if not board.get("closed"))
+    nz.check_group(bool(boards))
     responsible = nz.members(trello.members_emails(boards), owner=trello.author_id)
     for board in boards:
         _import_board(nz, trello, board, responsible)
@@ -105,17 +103,11 @@ def _import_comments(
     for attachment in card.get("attachments") or []:
         nz.attachment(
             nt_task_id,
-            attachment.get("name") or "attachment",
+            attachment.get("name"),
             attachment.get("url"),
             bool(attachment.get("isUpload")),
-            trello.headers if _is_trello(attachment.get("url")) else None,
+            trello.headers if on_host(attachment.get("url"), "trello.com") else None,  # OAuth
         )
-
-
-def _is_trello(url: str | None) -> bool:
-    """host is (sub)trello.com; only such get OAuth headers"""
-    host = urlparse(url or "").hostname or ""
-    return host == "trello.com" or host.endswith(".trello.com")
 
 
 def _color(background: str | None) -> str | None:

@@ -13,7 +13,7 @@ from ntimporters.utils import checklist, dig, parse_timestamp, zone
 SPEC = {
     "code": "mstodo",
     "name": "Microsoft To Do",
-    "url": "https://nozbe.help/advancedfeatures/importers/",
+    "url": "https://nozbe.help/advancedfeatures/importers/#todo",
     "input_fields": ("nt_auth_token", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Microsoft To Do"
@@ -49,7 +49,7 @@ def _is_default(task_list: dict) -> bool:
 def _import_data(nz: NozbeImport, todo: MSTodoClient):
     """lists -> projects; default list -> Single Tasks; flagged emails skipped"""
     lists = [elt for elt in todo.lists() if elt.get("wellknownListName") != "flaggedEmails"]
-    nz.check_open_projects(elt.get("displayName") for elt in lists if not _is_default(elt))
+    nz.check_group(not all(map(_is_default, lists)))
     for task_list in lists:
         _import_list(nz, todo, task_list)
 
@@ -63,8 +63,7 @@ def _import_list(nz: NozbeImport, todo: MSTodoClient, task_list: dict):
     if not nt_project_id:
         return
     tasks = todo.tasks(task_list.get("id"))
-    names = dict.fromkeys(itertools.chain.from_iterable(map(_labels, tasks)))
-    tags = nz.tags((name, None) for name in names) if names else {}
+    tags = nz.tags((name, None) for name in itertools.chain.from_iterable(map(_labels, tasks)))
     for position, task in enumerate(tasks):
         _import_task(nz, todo, task_list.get("id"), task, nt_project_id, position, tags)
 
@@ -204,7 +203,7 @@ def _import_comments(
         for attachment in todo.attachments(list_id, task_id):
             nz.attachment(
                 nt_task_id,
-                attachment.get("name") or "attachment",
+                attachment.get("name"),
                 todo.attachment_url(list_id, task_id, attachment.get("id")),
                 is_file=True,
                 headers=todo.headers,

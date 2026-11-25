@@ -1,6 +1,5 @@
 import hashlib
 import io
-from collections import deque
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -94,18 +93,6 @@ def test_task_recurrence_with_due_unless_recurring(nt, nz, monkeypatch):
     recurrence.assert_called_with(PROJECT, NEW, "FREQ=DAILY", True, "daily")
 
 
-def test_section_limit_counts_open_sections(nt, nz, monkeypatch):
-    """Existing open sections count; reused, archived ones don't add"""
-    nz._limits = {"project_sections": 2}
-    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
-    nt.api.ProjectSectionsApi().post_project_section.return_value = NS(id=NEW)
-    assert nz.section(PROJECT, "S", 0) == "s"
-    nz.section(PROJECT, "Archived", 1, archived=True)
-    nz.section(PROJECT, "New", 2)
-    with pytest.raises(ImportException):
-        nz.section(PROJECT, "Newer", 3)
-
-
 def test_assign_tags_skips_assigned(nt, nz):
     """Existing task: assignments fetched once per tag; new task: none fetched"""
     nt.records["/tag_assignments"] = [{"task_id": OLD}]
@@ -148,23 +135,6 @@ def test_upload_saves_under_base_name(nt, nz, name, saved):
     nz._upload(COMMENT, "https://f", name, None)
     path = nt.api.AttachmentsApi().postattachment_by_id_content2.call_args.kwargs.get("file")
     assert Path(path).name == saved
-
-
-def test_check_open_projects_counts_only_new(nz, monkeypatch):
-    nz._limits, nz._team_projects = {"projects_open": 2}, []
-    nz.imported["projects"] = {"Home": deque(["h" * 16])}
-    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
-    nz.check_open_projects(["Home", "Work", "Gym"])  # 2 new
-    with pytest.raises(ImportException):
-        nz.check_open_projects(["Home", "Home", "Work", "Gym"])  # 3 new: second Home too
-
-
-def test_check_limit_missing_is_unlimited(nz, monkeypatch):
-    nz._limits = {"projects": 1}
-    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
-    nz.check_limit("project_sections", 100)
-    with pytest.raises(ImportException):
-        nz.check_limit("projects", 2)
 
 
 def test_imported_entities_chain(nt):
@@ -227,15 +197,13 @@ def test_task_imported_before_gets_missing_responsibility_tag(nt, nz):
     assert [elt.args[0].task_id for elt in posted] == [OLD]
 
 
-def test_tags_visible_in_team_only(nt, nz, monkeypatch):
-    """Other teams' tags: not matched, not counted"""
+def test_tags_visible_in_team_only(nt, nz):
+    """Other teams' tags: not matched"""
     nt.records["/tags"] = [
         {"id": "t" * 16, "name": "home", "team_id": None},
         {"id": "u" * 16, "name": "work", "team_id": "team"},
         {"id": "v" * 16, "name": "gym", "team_id": "other"},
     ]
-    nz._limits = {"tags": 3}
-    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
     nt.api.TagsApi().post_tag.return_value = NS(id=NEW)
     assert nz.tags([("home", None), ("work", None), ("gym", None)]) == {
         "home": "t" * 16,
@@ -289,15 +257,33 @@ def test_recurrence_put_keeps_task_flags(nt, nz):
     assert put.to_dict() == {"recurrence_id": "r" * 16, "is_all_day": True}
 
 
-def test_tags_over_limit_only_existing(nt, nz, monkeypatch):
-    nz._limits = {"tags": 1}
-    monkeypatch.setattr("ntimporters.nozbe.subscribe_trial", lambda *_: False)
-    assert nz.tags([("missing responsibility", None), ("new", None)]) == {
-        "missing responsibility": "t" * 16
-    }
-    nt.api.TagsApi().post_tag.assert_not_called()
-
-
 def test_time_zone_unreadable_user_is_utc(nt, nz):
     nt.api.UsersApi().get_user_by_id.side_effect = OpenApiException
     assert nz.time_zone == "UTC"
+
+
+@pytest.mark.parametrize(
+    "group_id, has_projects, limit, groups, trial, outcome",
+    [
+        (None, True, 0, 0, True, "trial"),  # Free, first import
+        (None, True, 0, 0, False, "refused"),  # Free, trial used
+        (None, True, -1, 0, True, None),  # Premium
+        (None, True, 2, 1, True, None),  # custom limit, room left
+        (None, False, 0, 0, True, None),  # Single Tasks only: no group
+        ("g" * 16, True, 0, 1, True, None),  # re-run: group exists
+    ],
+)
+def test_check_group(nt, nz, monkeypatch, group_id, has_projects, limit, groups, trial, outcome):
+    """Trial iff import group to create over project_groups limit; refused: ImportException"""
+    nz.group_id = group_id
+    nt.api.TeamsApi().get_team_by_id.return_value = NS(limits=f'{{"project_groups": {limit}}}')
+    nt.records["/project_groups"] = [{"id": f"{n}" * 16} for n in range(groups)]
+    monkeypatch.setattr(
+        "ntimporters.nozbe.subscribe_trial", subscribe := MagicMock(return_value=trial)
+    )
+    if outcome == "refused":
+        with pytest.raises(ImportException, match="LIMIT project_groups"):
+            nz.check_group(has_projects)
+    else:
+        nz.check_group(has_projects)
+    assert subscribe.called == (outcome is not None)

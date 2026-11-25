@@ -38,7 +38,7 @@ PRs with new importers or improvements are welcome.
 
   ```python
   nz = NozbeImport(nt_auth_token, team_id, "Imported from MyApp")
-  nz.check_open_projects(board["name"] for board in boards)
+  nz.check_group(bool(boards))  # before any write; Free team: trial (group is Premium)
   responsible = nz.members({user["id"]: user["email"] for user in users}, owner=me["id"])
   project_id = nz.project(board["name"], is_favorite=board["starred"])
   section_id = nz.section(project_id, column["name"], position)
@@ -57,7 +57,7 @@ PRs with new importers or improvements are welcome.
 
   `NozbeImport` keeps imported projects in the "Imported from <app>" group. Re-runs are safe: projects match by name, sections and tasks by name within their project, comments by body within their task. Shared rules:
 
-  - Limits: projects imported before don't count; sections checked per project as created
+  - Limits: only the import group is checked, upfront (`check_group`); on Free that needs a trial, which lifts all limits; no trial: nothing imported
   - Members matched by email; the token owner is the importing user
   - Recurrence (`recurrence=(rrule, fallback comment)`): set only on a due task
   - Reminder (`remind_at=` ms): only on a new task
@@ -87,6 +87,8 @@ uv run python -c "from ntimporters.todoist import run_import; print(run_import('
 ### Nozbe API client
 
 - `src/openapi_client` is generated from the backend's OpenAPI spec; don't edit it by hand
+- Only the APIs in the Makefile's `APIS` are generated; using another API: add its spec tag there
+- `tools/slim_client.py` then strips docstrings and the unused `*_with_http_info` / `*_without_preload_content` variants
 - Customisations (API version header, dev token, 429 retries) live in `ntimporters.utils.nt_api_client`
 
 Regenerate:

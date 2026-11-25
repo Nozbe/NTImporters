@@ -7,8 +7,7 @@ from dateutil.parser import isoparse
 from more_itertools import first
 
 from ntimporters.nozbe import NozbeImport, run_safely
-from ntimporters.utils import checklist, dig, parse_timestamp
-from openapi_client import models
+from ntimporters.utils import checklist, dig, map_color, parse_timestamp
 
 SPEC = {
     "code": "asana",
@@ -75,9 +74,7 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
         )
         for elt in workspaces
     }
-    nz.check_open_projects(
-        elt.get("name") for elts in projects.values() for elt in elts if not elt.get("archived")
-    )
+    nz.check_group(any(projects.values()))
     me = asana.UsersApi(asana_client).get_user("me", {})
     responsible = nz.members(
         {elt.get("gid"): elt.get("email") for elt in asana_users(asana_client, workspaces)},
@@ -99,7 +96,7 @@ def _import_data(nz: NozbeImport, asana_client: asana.ApiClient):
             if not (
                 nt_project_id := nz.project(
                     project.get("name", ""),
-                    color=_map_color(project.get("color")),
+                    color=map_color(COLOR_MAP.get(project.get("color"))),
                     ended=bool(project.get("archived")),
                 )
             ):
@@ -217,15 +214,10 @@ def _import_comments(nz: NozbeImport, asana_client, nt_task_id: str, task: dict)
         is_file = attachment.get("host") == "asana" and bool(attachment.get("download_url"))
         nz.attachment(
             nt_task_id,
-            attachment.get("name") or "attachment",
+            attachment.get("name"),
             attachment.get("download_url" if is_file else "view_url"),
             is_file,
         )
-
-
-def _map_color(asana_color: str | None) -> models.Color | None:
-    """None if unmapped"""
-    return models.Color(color) if (color := COLOR_MAP.get(asana_color or "")) else None
 
 
 def asana_users(asana_client, workspaces: list) -> list[dict]:

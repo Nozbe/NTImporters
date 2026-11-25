@@ -2,3 +2,7 @@ __pycache__
 build
 ntimporters.egg-info
 *.key
+.client_build/
+# local secrets
+asana.txt
+s4.txt

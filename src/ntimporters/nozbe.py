@@ -5,7 +5,7 @@ import itertools
 import json
 import shutil
 import tempfile
-from collections import Counter, defaultdict, deque
+from collections import defaultdict, deque
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, date, datetime, time
 from functools import cached_property
@@ -79,11 +79,11 @@ def get_imported_entities(
 ) -> dict[str, dict]:
     """ids of group's (+ Single Tasks' imported) entities, creation order: projects by name;
     sections, tasks by (project_id, name); comments by author_id by (task_id, body);
-    'open_sections': project_id -> non-archived count; 'recurring': task ids.
+    'recurring': task ids.
     single_tasks: (Single Tasks id, ids of tasks imported there)"""
     imported = {
         kind: defaultdict(deque) for kind in ("projects", "project_sections", "tasks", "comments")
-    } | {"open_sections": Counter(), "recurring": set()}
+    } | {"recurring": set()}
 
     def _add(kind: str, records: list[dict], key: Callable):
         for record in sorted(records, key=lambda elt: elt.get("created_at") or 0):
@@ -123,15 +123,12 @@ def get_imported_entities(
             nt_client,
             "/project_sections",
             project_id=project_id,
-            fields="id,name,created_at,archived_at",
+            fields="id,name,created_at",
         )
         _add(
             "project_sections",
             sections,
             lambda elt, project_id=project_id: (project_id, elt.get("name")),
-        )
-        imported.get("open_sections")[project_id] = sum(
-            not elt.get("archived_at") for elt in sections
         )
         task_ids |= _add_tasks(project_id)
     if single_tasks and single_tasks[1]:
@@ -194,7 +191,6 @@ class NozbeImport:
             self._team_projects,
             (self.single_tasks_id, self._tasks_tagged(mark)) if mark else None,
         )
-        self._trial = False
 
     def _post(self, what: str, call: Callable[[], object]) -> str | None:
         """id of record created by call; None (logged) if refused"""
@@ -210,7 +206,7 @@ class NozbeImport:
             self.client,
             "/projects",
             team_id=self.team_id,
-            fields="id,name,created_at,is_open,ended_at,is_template,is_single_actions",
+            fields="id,name,created_at,is_single_actions",
         )
 
     @cached_property
@@ -220,32 +216,19 @@ class NozbeImport:
             (elt.get("id") for elt in self._team_projects if elt.get("is_single_actions")), None
         )
 
-    @cached_property
-    def _limits(self) -> dict:
-        team = api.TeamsApi(self.client).get_team_by_id(self.team_id)
-        return json.loads(getattr(team, "limits", None) or "{}")
-
-    def check_limit(self, name: str, count: int):
-        """count > team limit (-1/missing: none): trial subscribed, else ImportException"""
-        if self._trial or not count > (limit := self._limits.get(name, -1)) > -1:
+    def check_group(self, has_projects: bool):
+        """before any write: import group to create (projects, no group yet) over team's
+        project_groups limit (Free: 0) -> trial; refused: ImportException, nothing imported.
+        Trial lifts all limits (-1), so no other limit is checked"""
+        if self.group_id or not has_projects:
             return
-        if not subscribe_trial(self.nt_auth_token, self.team_id):
-            raise ImportException(f"LIMIT {name} : {count} > {limit}")
-        self._trial = True
-
-    def check_open_projects(self, names: Iterable[str]):
-        """check_limit on open projects + names not imported before"""
-        imported = self.imported.get("projects", {})
-        count = sum(
-            max(0, number - len(imported.get(name, ())))
-            for name, number in Counter(map(trim, names)).items()
-        )
-        open_projects = sum(
-            bool(elt.get("is_open"))
-            and not any(elt.get(key) for key in ("ended_at", "is_template", "is_single_actions"))
-            for elt in self._team_projects
-        )
-        self.check_limit("projects_open", count + open_projects)
+        team = api.TeamsApi(self.client).get_team_by_id(self.team_id)
+        limits = json.loads(getattr(team, "limits", None) or "{}")
+        if (limit := limits.get("project_groups", -1)) < 0:
+            return
+        groups = len(fetch_all(self.client, "/project_groups", team_id=self.team_id, fields="id"))
+        if groups >= limit and not subscribe_trial(self.nt_auth_token, self.team_id):
+            raise ImportException(f"LIMIT project_groups : {groups + 1} > {limit}")
 
     @cached_property
     def _team_emails(self) -> list[tuple[str, str]]:
@@ -354,13 +337,10 @@ class NozbeImport:
     def section(
         self, project_id: str, name: str, position: float, archived: bool = False
     ) -> str | None:
-        """id of section by name in project; created if missing; open ones within team limit"""
+        """id of section by name in project; created if missing"""
         if section_id := exists("project_sections", name := trim(name), self.imported, project_id):
             return section_id
-        open_sections = self.imported.get("open_sections")
-        if not archived:
-            self.check_limit("project_sections", open_sections.get(project_id, 0) + 1)
-        section_id = self._post(
+        return self._post(
             f"section {name!r}",
             lambda: api.ProjectSectionsApi(self.client).post_project_section(
                 models.ProjectSection(
@@ -373,9 +353,6 @@ class NozbeImport:
                 )
             ),
         )
-        if section_id and not archived:
-            open_sections[project_id] = open_sections.get(project_id, 0) + 1
-        return section_id
 
     def task(
         self,
@@ -498,6 +475,8 @@ class NozbeImport:
 
     def _upload(self, comment_id: str, url: str, name: str, headers: dict | None):
         """url downloaded, attached to comment as name"""
+        base = Path(name).name
+        base = base if base not in ("", ".", "..") else "attachment"
         try:
             with (
                 self._downloads.get(url, headers=headers, timeout=120, stream=True) as response,
@@ -505,12 +484,7 @@ class NozbeImport:
             ):
                 response.raise_for_status()
                 response.raw.decode_content = True
-                with (
-                    path := Path(
-                        tmp,
-                        base if (base := Path(name).name) not in ("", ".", "..") else "attachment",
-                    )
-                ).open("wb") as file:
+                with (path := Path(tmp, base)).open("wb") as file:
                     shutil.copyfileobj(response.raw, file)
                 api.AttachmentsApi(self.client).postattachment_by_id_content2(
                     comment_id, file=str(path)
@@ -519,9 +493,15 @@ class NozbeImport:
             log.warning("attachment %r not uploaded", name, exc_info=True)
 
     def attachment(
-        self, task_id: str, name: str, url: str | None, is_file: bool, headers: dict | None = None
+        self,
+        task_id: str,
+        name: str | None,
+        url: str | None,
+        is_file: bool,
+        headers: dict | None = None,
     ):
-        """comment: name + file if is_file, else name + url"""
+        """comment: name ('attachment' if empty) + file if is_file, else name + url"""
+        name = name or "attachment"
         if is_file and url:
             self.comment(task_id, name, (url, name, headers))
         else:
@@ -587,15 +567,11 @@ class NozbeImport:
         return self._tags.get(name)
 
     def tags(self, labels: Iterable[tuple[str, str | None]]) -> dict[str, str]:
-        """(name, color) labels -> name -> tag id; missing created, unless over team limit"""
-        labels = dict(labels)
-        try:
-            self.check_limit("tags", len(self._tags.keys() | set(map(trim, labels))))
-        except ImportException:
-            log.warning("tags over team limit: only existing ones assigned", exc_info=True)
-            labels = {name: color for name, color in labels.items() if trim(name) in self._tags}
+        """(name, color) labels -> name -> tag id; missing created"""
         return {
-            name: tag_id for name, color in labels.items() if (tag_id := self._tag(name, color))
+            name: tag_id
+            for name, color in dict(labels).items()
+            if (tag_id := self._tag(name, color))
         }
 
     def _tasks_tagged(self, tag_id: str) -> set[str]:
