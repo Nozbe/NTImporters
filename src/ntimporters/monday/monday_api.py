@@ -18,9 +18,10 @@ class MondayClient:
 
     api_path = "https://api.monday.com/v2"
     limit = 300
-    page_limit = 100
+    page_limit = 100  # 500 (API max) exhausts complexity budget with nested updates, subitems
     updates_limit = 20  # nested per item
     updates_page = 100  # API maximum per updates page
+    ids_limit = 100  # API maximum ids per items query
 
     def __init__(self, app_key):
         self.headers = {"Authorization": app_key}
@@ -82,19 +83,28 @@ class MondayClient:
             if board.get("type") == "board"
         ]
 
-    def _updates(self, raw: dict) -> list[dict]:
-        """updates of raw; refetched paged if nested ones hit updates_limit"""
-        updates = raw.get("updates") or []
-        if len(updates) < self.updates_limit:
-            return updates
-        return self._paged(
-            lambda page, size: (
-                f"items(ids:{raw.get('id')}) {{ updates(limit:{size} page:{page})"
-                f" {{ {UPDATE_FIELDS} }} }}"
-            ),
-            "data.items.0.updates",
-            self.updates_page,
-        )
+    def _refetch_updates(self, raws: list[dict]):
+        """all updates of raws whose nested ones hit updates_limit; per page one request for
+        <= ids_limit items, items with a short page dropped"""
+        full = [raw for raw in raws if len(raw.get("updates") or []) >= self.updates_limit]
+        for chunk in itertools.batched(full, self.ids_limit, strict=False):
+            pending = {str(raw.get("id")): raw for raw in chunk}
+            for raw in chunk:
+                raw["updates"] = []
+            for page in itertools.count(1):
+                if not pending:
+                    break
+                query = (
+                    f"items(ids:[{','.join(pending)}] limit:{len(pending)}) {{ id"
+                    f" updates(limit:{self.updates_page} page:{page}) {{ {UPDATE_FIELDS} }} }}"
+                )
+                more = {}
+                for item in dig(self._req(query), "data.items", []):
+                    if raw := pending.get(str(item.get("id"))):
+                        raw.get("updates").extend(updates := item.get("updates") or [])
+                        if len(updates) == self.updates_page:
+                            more[str(item.get("id"))] = raw
+                pending = more
 
     def board(self, project_id: str) -> tuple[list[dict], list[dict]]:
         """(groups, items in board order); items, subitems carry all updates"""
@@ -121,9 +131,9 @@ class MondayClient:
                 {},
             )
             items += page.get("items") or []
-        for item in items:
-            for raw in [item, *(item.get("subitems") or [])]:
-                raw["updates"] = self._updates(raw)
+        self._refetch_updates(
+            [raw for item in items for raw in [item, *(item.get("subitems") or [])]]
+        )
         return board.get("groups") or [], items
 
     def me_id(self) -> str | None:

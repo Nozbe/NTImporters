@@ -132,7 +132,7 @@ def test_board_pages_and_orders():
                 "next_items_page": {"cursor": None, "items": [_raw(3) | {"group": {"id": "h"}}]}
             }
         },
-        {"data": {"items": [{"updates": full}]}},
+        {"data": {"items": [{"id": "1", "updates": full}]}},
     ]
     with patch.object(client, "_req", side_effect=responses) as req:
         groups, items = client.board("b")
@@ -146,3 +146,19 @@ def test_board_pages_and_orders():
         (1, "g", 1),
     ]
     assert tasks[2].get("comments") == full[::-1]
+
+
+def test_refetch_updates_batched():
+    """One request per page for all full items; item with a short page dropped"""
+    client = MondayClient("key")
+    client.updates_limit, client.updates_page = 1, 2
+    raws = [_raw(1, updates=[{}]), _raw(2, updates=[{}]), _raw(3)]
+    responses = [
+        {"data": {"items": [{"id": "1", "updates": [1, 2]}, {"id": "2", "updates": [3]}]}},
+        {"data": {"items": [{"id": "1", "updates": [4]}]}},
+    ]
+    with patch.object(client, "_req", side_effect=responses) as req:
+        client._refetch_updates(raws)
+    assert [raw.get("updates") for raw in raws] == [[1, 2, 4], [3], []]
+    assert "items(ids:[1,2] limit:2)" in req.call_args_list[0].args[0]
+    assert "items(ids:[1] limit:1)" in req.call_args_list[1].args[0]
