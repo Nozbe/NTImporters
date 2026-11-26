@@ -1,255 +1,135 @@
 """Monday -> Nozbe importer"""
 
+import itertools
+import json
 import re
-from typing import Optional
+from contextlib import suppress
+from datetime import datetime
 
-import openapi_client as nt
-from dateutil.parser import isoparse
+from more_itertools import first_true
+
 from ntimporters.monday.monday_api import MondayClient
-from ntimporters.utils import (
-    API_HOST,
-    add_to_project_group,
-    check_limits,
-    current_nt_member,
-    exists,
-    get_imported_entities,
-    id16,
-    match_nt_users,
-    nt_open_projects_len,
-    set_unassigned_tag,
-    trim,
-)
-from openapi_client import models, api
-from openapi_client.exceptions import OpenApiException
+from ntimporters.nozbe import NozbeImport, run_safely
+from ntimporters.utils import dig, parse_timestamp
 
 SPEC = {
-    "code": "monday",  # codename / ID of importer
-    "name": "Monday",  # name of application
+    "code": "monday",
+    "name": "Monday",
     "url": "https://nozbe.help/advancedfeatures/importers/#monday",
     "input_fields": ("team_id", "nt_auth_token", "app_key"),
 }
 IMPORT_NAME = "Imported from Monday"
+PEOPLE = {"people", "multiple-person"}
 
 
-# main method called by Nozbe app
-def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Optional[Exception]:
-    """Perform import from monday to Nozbe"""
-    if not nt_auth_token:
-        return "Missing 'nt_auth_token'"
-    if not app_key:
-        return "Missing 'app_key'"
+def run_import(nt_auth_token: str, app_key: str, team_id: str) -> Exception | str | None:
+    """Nozbe app entry point"""
+    return run_safely(
+        lambda: _import_data(
+            NozbeImport(nt_auth_token, team_id, IMPORT_NAME), MondayClient(app_key)
+        ),
+        nt_auth_token=nt_auth_token,
+        app_key=app_key,
+    )
 
-    try:
-        _import_data(
-            nt.ApiClient(
-                configuration=nt.Configuration(
-                    host=API_HOST,
-                    api_key={"ApiKeyAuth": nt_auth_token},
-                    username=nt_auth_token.split("_")[0],
-                )
-            ),
-            MondayClient(app_key),
-            team_id,
-            nt_auth_token,
+
+def _import_data(nz: NozbeImport, monday: MondayClient):
+    """active boards -> projects, groups -> sections, items -> tasks"""
+    boards = [board for board in monday.projects() if board.get("state") == "active"]
+    nz.check_group(bool(boards))
+    responsible = nz.members(monday.users(), owner=monday.me_id())
+    for board in boards:
+        _import_board(nz, monday, board, responsible)
+
+
+def _import_board(nz: NozbeImport, monday: MondayClient, board: dict, responsible: dict):
+    """board -> project + sections, tasks, comments"""
+    if not (
+        nt_project_id := nz.project(
+            board.get("name", ""),
+            description=board.get("description"),
+            is_open=board.get("board_kind") == "public",
         )
+    ):
+        return
+    groups, items = monday.board(board.get("id"))
+    section_ids = {
+        group.get("id"): section_id
+        for group in groups
+        if (
+            section_id := nz.section(
+                nt_project_id,
+                group.get("title", ""),
+                group.get("position") or 1,
+                archived=bool(group.get("archived")),
+            )
+        )
+    }
+    for item in _tasks(items):
+        nt_task_id, _ = nz.task(
+            nt_project_id,
+            item.get("name", ""),
+            section_id=section_ids.get(item.get("group")),
+            position=item.get("position") or 1,
+            due=item.get("due"),
+            responsible_id=first_true(map(responsible.get, item.get("assigned") or [])),
+            assigned=bool(item.get("assigned") or item.get("teams")),
+        )
+        if nt_task_id:
+            for update in item.get("comments") or []:
+                body = update.get("text_body")
+                # bullets at line start -> markdown
+                nz.comment(nt_task_id, body and re.sub(r"(?m)^(\s*)\* ", r"\1- ", body))
 
-    except Exception as exc:
-        return exc
+
+def _thread(updates: list[dict]) -> list[dict]:
+    """updates + replies, flat, oldest first"""
+    return sorted(
+        itertools.chain.from_iterable(
+            [update, *(update.pop("replies", None) or [])] for update in updates
+        ),
+        key=lambda elt: parse_timestamp(elt.get("created_at")) or 0,
+    )
+
+
+def _value(column: dict | None):
+    """column's parsed JSON value (read with dig); None if none or unreadable"""
+    with suppress(ValueError):
+        return json.loads(dig(column, "value") or "null")
     return None
 
 
-def _import_data(nt_client: nt.ApiClient, monday_client, team_id: str, nt_auth_token: str):
-    """Import everything from monday to Nozbe"""
-    projects_api = api.ProjectsApi(nt_client)
-    curr_member = current_nt_member(nt_client, team_id)
-    imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
-
-    def _import_project(project: dict, curr_member: str):
-        """Import monday project"""
-        if project.get("name", "").startswith("Subitems of"):
-            return
-        project_model = models.Project(
-            name=(name := trim(project.get("name", ""))),
-            team_id=team_id,
-            author_id=curr_member,
-            created_at=1,
-            last_event_at=1,
-            is_template=False,
-            ended_at=1 if project.get("state") in ("archived", "deleted") else None,
-            sidebar_position=1.0,
-            description=project.get("description"),
-            is_open=project.get("board_kind") == "public",
-            extra="",
-        )
-        nt_project = (
-            exists("projects", name, imported) or projects_api.post_project(project_model) or {}
-        )
-        if not (nt_project_id := nt_project and str(nt_project.id)):
-            return
-        add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
-
-        _import_project_sections(
-            nt_client,
-            monday_client,
-            nt_project_id,
-            project,
-            curr_member,
-            team_id,
-            nt_auth_token,
-            imported=imported,
-        )
-
-    monday_projects = monday_client.projects()
-    monday_projects_open = [
-        elt.get("id") for elt in monday_projects if elt.get("board_kind") == "public"
-    ]
-    check_limits(
-        nt_auth_token,
-        team_id,
-        nt_client,
-        "projects_open",
-        len(monday_projects_open) + nt_open_projects_len(nt_client, team_id),
-    )
-
-    for project in monday_projects:
-        if project.get("state") in ("archived", "deleted"):
-            continue
-        _import_project(project, curr_member)
-
-
-# pylint: disable=too-many-arguments
-def _import_project_sections(
-    nt_client,
-    monday_client,
-    nt_project_id,
-    project,
-    curr_member: str,
-    team_id: str,
-    nt_auth_token: str,
-    imported=None,
-):
-    """Import monday lists as project sections"""
-    nt_api_sections = api.ProjectSectionsApi(nt_client)
-    imported = imported or {}
-
-    check_limits(
-        nt_auth_token,
-        team_id,
-        nt_client,
-        "project_sections",
-        len(monday_sections := monday_client.sections(project.get("id"))),
-    )
-    sections_mapping = {}
-    for section in monday_sections:
-        try:
-            if nt_section := exists(
-                "project_sections", name := trim(section.get("title", "")), imported
-            ) or nt_api_sections.post_project_section(
-                models.ProjectSection(
-                    id=id16(),
-                    project_id=nt_project_id,
-                    name=name,
-                    created_at=1,
-                    archived_at=1 if section.get("archived") else None,
-                    position=float(section.get("position") or 1.0),
+def _task(raw: dict, group: str | None, position: int) -> dict:
+    """item/subitem -> task; due: sole dated date column; assigned: first set people column"""
+    columns = raw.get("column_values") or []
+    due = None
+    match [col for col in columns if col.get("type") == "date" and col.get("text")]:
+        case [column]:
+            value = _value(column)  # value: UTC; text: account time zone
+            day, moment = dig(value, "date"), dig(value, "time")
+            with suppress(ValueError):  # unreadable date: no due
+                due = (
+                    datetime.fromisoformat(f"{day}T{moment}Z")
+                    if moment
+                    else datetime.fromisoformat(day or column.get("text")).date()
                 )
-            ):
-                sections_mapping[section.get("id")] = str(nt_section.id)
-        except OpenApiException:
-            pass
-    _import_tasks(
-        nt_client,
-        monday_client,
-        sections_mapping,
-        project.get("id"),
-        nt_project_id,
-        curr_member,
-        imported=imported,
-    )
+    people = first_true(columns, pred=lambda col: col.get("type") in PEOPLE and col.get("value"))
+    entries = dig(_value(people), "personsAndTeams", [])
+    return {
+        "id": raw.get("id"),
+        "name": raw.get("name"),
+        "group": group,
+        "position": position,
+        "due": due,
+        "assigned": [str(elt.get("id")) for elt in entries if elt.get("kind") == "person"],
+        "teams": [str(elt.get("id")) for elt in entries if elt.get("kind") == "team"],
+        "comments": _thread(raw.get("updates") or []),
+    }
 
 
-def _import_tasks(
-    nt_client,
-    monday_client,
-    sections_mapping,
-    m_project_id,
-    nt_project_id,
-    author_id,
-    imported=None,
-):
-    """Import tasks"""
-    nt_api_tasks = api.TasksApi(nt_client)
-    monday_users = monday_client.users()
-    nt_members = match_nt_users(nt_client, monday_users.values())
-    for task in monday_client.tasks(m_project_id):
-        responsible_id = None
-        if task.get("assigned"):
-            for resp in task.get("assigned") or []:
-                email = monday_users.get(str(resp.get("id")))
-                if responsible_id := nt_members.get(email):
-                    break
-
-        if nt_task := exists(
-            "tasks", name := trim(task.get("name", "")), imported
-        ) or nt_api_tasks.post_task(
-            models.Task(
-                is_followed=False,
-                is_abandoned=False,
-                missed_repeats=0,
-                name=name,
-                project_id=nt_project_id,
-                author_id=author_id,
-                created_at=1,
-                last_activity_at=1,
-                project_section_id=sections_mapping.get(task.get("group")),
-                project_position=float(task.get("position") or 1.0),
-                extra="",
-                due_at=task.get("due_at"),
-                is_all_day=task.get("is_all_day"),
-                responsible_id=responsible_id if task.get("due_at") else None,
-            )
-        ):
-            if task.get("due_at") and not responsible_id:
-                set_unassigned_tag(nt_client, str(nt_task.id))
-            _import_comments(
-                nt_client,
-                monday_client,
-                str(nt_task.id),
-                task.get("id"),
-                imported=imported,
-                author_id=author_id,
-            )
-
-
-# pylint: enable=too-many-arguments
-
-
-def _import_comments(
-    nt_client, monday_client, nt_task_id: str, tr_task_id: str, imported=None, author_id=None
-):
-    """Import task-related comments"""
-    nt_api_comments = api.CommentsApi(nt_client)
-    author_id = author_id or id16()
-    for comment in sorted(
-        monday_client.comments(tr_task_id),
-        key=lambda elt: isoparse(elt.get("created_at")).timestamp(),
-    ):
-        if not exists("comments", body := format_body(comment.get("text_body") or "…"), imported):
-            nt_api_comments.post_comment(
-                models.Comment(
-                    is_pinned=False,
-                    is_team=False,
-                    body=body,
-                    task_id=nt_task_id,
-                    created_at=1,
-                    author_id=author_id,
-                    extra="",
-                )
-            )
-
-
-def format_body(body) -> str:
-    return re.sub(r"\* ", "- ", body)
-
-
-# TODO import team members
+def _tasks(items: list[dict]) -> list[dict]:
+    """items, each then its subitems; positions 1.. in that order; returned reversed"""
+    rows = [(raw, item) for item in items for raw in [item, *(item.get("subitems") or [])]]
+    return [
+        _task(raw, dig(item, "group.id"), position) for position, (raw, item) in enumerate(rows, 1)
+    ][::-1]

@@ -1,333 +1,116 @@
 """Trello -> Nozbe importer"""
 
-from typing import Optional
+from datetime import datetime
 
-import openapi_client as nt
-from dateutil.parser import isoparse
-from ntimporters.trello.trello_api import TrelloClient
-from ntimporters.utils import (
-    API_HOST,
-    add_to_project_group,
-    check_limits,
-    current_nt_member,
-    exists,
-    get_imported_entities,
-    id16,
-    map_color,
-    match_nt_users,
-    nt_open_projects_len,
-    parse_timestamp,
-    post_tag,
-    set_unassigned_tag,
-    trim,
-)
-from openapi_client import models, api
-from openapi_client.exceptions import OpenApiException
+from more_itertools import first_true
+
+from ntimporters.nozbe import NozbeImport, run_safely
+from ntimporters.trello.trello_api import TrelloClient, checklists
+from ntimporters.utils import dig, map_color, on_host, parse_timestamp
 
 SPEC = {
-    "code": "trello",  # codename / ID of importer
-    "name": "Trello",  # name of application
+    "code": "trello",
+    "name": "Trello",
     "url": "https://nozbe.help/advancedfeatures/importers/#trello",
     "input_fields": ("nt_auth_token", "app_key", "auth_token", "team_id"),
 }
 IMPORT_NAME = "Imported from Trello"
 
 
-# main method called by Nozbe app
 def run_import(
     nt_auth_token: str, auth_token: str, app_key: str, team_id: str
-) -> Optional[Exception]:
-    """Perform import from Trello to Nozbe"""
-    if not nt_auth_token:
-        return "Missing 'nt_auth_token'"
-    if not auth_token:
-        return "Missing 'auth_token'"
-    if not app_key:
-        return "Missing 'app_key'"
+) -> Exception | str | None:
+    """Nozbe app entry point"""
+    return run_safely(
+        lambda: _import_data(
+            NozbeImport(nt_auth_token, team_id, IMPORT_NAME), TrelloClient(app_key, auth_token)
+        ),
+        nt_auth_token=nt_auth_token,
+        auth_token=auth_token,
+        app_key=app_key,
+    )
 
-    try:
-        _import_data(
-            nt.ApiClient(
-                configuration=nt.Configuration(
-                    host=API_HOST,
-                    api_key={"ApiKeyAuth": nt_auth_token},
-                    username=nt_auth_token.split("_")[0],
-                )
-            ),
-            TrelloClient(app_key, auth_token),
-            team_id,
-            nt_auth_token,
+
+def _import_data(nz: NozbeImport, trello: TrelloClient):
+    """boards -> projects, lists -> sections, cards -> tasks"""
+    boards = trello.projects()
+    nz.check_group(bool(boards))
+    responsible = nz.members(trello.members_emails(boards), owner=trello.author_id)
+    for board in boards:
+        _import_board(nz, trello, board, responsible)
+
+
+def _import_board(nz: NozbeImport, trello: TrelloClient, board: dict, responsible: dict):
+    """board -> project + sections, tags, tasks"""
+    if not (
+        nt_project_id := nz.project(
+            board.get("name", ""),
+            color=map_color(_color(dig(board, "prefs.background"))),
+            description=board.get("desc") or "",
+            is_favorite=board.get("is_fav"),
+            ended=bool(board.get("closed")),
         )
-    except Exception as exc:
-        print(exc)
-        return exc
-    return None
-
-
-def _import_data(nt_client: nt.ApiClient, trello_client, team_id: str, nt_auth_token: str):
-    """Import everything from Trello to Nozbe"""
-    projects_api = api.ProjectsApi(nt_client)
-    curr_member = current_nt_member(nt_client, team_id)
-    imported = get_imported_entities(nt_client, team_id, IMPORT_NAME)
-
-    def _import_project(project: dict, curr_member: str):
-        """Import trello project"""
-        project_model = models.Project(
-            name=(name := trim(project.get("name", ""))),
-            is_template=False,
-            team_id=team_id,
-            author_id=curr_member,
-            created_at=1,
-            last_event_at=1,
-            color=map_color(project.get("backgroundTopColor")),
-            description=str(project.get("desc") or ""),
-            is_favorite=project.get("is_fav"),
-            sidebar_position=1.0,
-            is_open=True,
-            extra="",
-        )
-        nt_project = (
-            exists("projects", name, imported) or projects_api.post_project(project_model) or {}
-        )
-        if not (nt_project_id := nt_project and str(nt_project.id)):
-            return
-        add_to_project_group(nt_client, team_id, nt_project_id, IMPORT_NAME)
-
-        _import_project_sections(
-            nt_client,
-            trello_client,
+    ):
+        return
+    cards, comments = trello.tasks(board.get("id")), trello.comments(board.get("id"))
+    lists = [  # archived: only if holding open cards
+        elt for elt in board.get("lists") or [] if not elt.get("closed") or cards.get(elt.get("id"))
+    ]
+    tag_ids = nz.tags(
+        (_label_name(label), label.get("color")) for label in board.get("labels") or []
+    )
+    for position, trello_list in enumerate(lists):
+        section_id = nz.section(
             nt_project_id,
-            project,
-            curr_member,
-            team_id,
-            nt_auth_token,
-            imported=imported,
+            trello_list.get("name", ""),
+            position,
+            archived=bool(trello_list.get("closed")),
         )
-
-    check_limits(
-        nt_auth_token,
-        team_id,
-        nt_client,
-        "projects_open",
-        len(trello_projects := trello_client.projects()) + nt_open_projects_len(nt_client, team_id),
-    )
-    for project in trello_projects:
-        try:
-            _import_project(project, curr_member)
-        except Exception as error:
-            return error
-    return None
-
-
-# pylint: disable=too-many-arguments
-def _import_project_sections(
-    nt_client,
-    trello_client,
-    nt_project_id: str,
-    project: dict,
-    nt_member_id: str,
-    team_id: str,
-    nt_auth_token: str,
-    imported=None,
-):
-    """Import trello lists as project sections"""
-    nt_api_sections = api.ProjectSectionsApi(nt_client)
-    nt_api_tasks = api.TasksApi(nt_client)
-
-    # import project sections
-    check_limits(
-        nt_auth_token,
-        team_id,
-        nt_client,
-        "project_sections",
-        len(trello_sections := trello_client.sections(project.get("id"))),
-    )
-    for j, section in enumerate(trello_sections):
-        nt_section_id = None
-        try:
-            nt_section = exists("project_sections", name := trim(section.get("name", "")), imported)
-            if nt_section := nt_section or nt_api_sections.post_project_section(
-                models.ProjectSection(
-                    id=id16(),
-                    project_id=nt_project_id,
-                    name=name,
-                    created_at=1,
-                    archived_at=1 if section.get("closed") else None,
-                    position=float(j),
-                )
-            ):
-                nt_section_id = nt_section.id
-        except OpenApiException as exc:
-            print(exc)
-
-        trello_members = trello_client.members_emails() or {}
-        nt_users = match_nt_users(nt_client, trello_members.values())
-
-        def _get_responsible_id(task: dict):
-            if members := task.get("idMembers"):
-                for member_id in members:
-                    if (
-                        (email := trello_members.get(member_id))
-                        and (responsible_id := nt_users.get(email))
-                        and responsible_id != nt_member_id
-                    ):
-                        return responsible_id
-            return None
-
-        for i, task in enumerate(trello_client.tasks(section.get("id"))):
-            responsible_id = _get_responsible_id(task) or nt_member_id if task.get("due") else None
-
-            nt_task = exists("tasks", name := trim(task.get("name", "")), imported)
-            if nt_task := nt_task or nt_api_tasks.post_task(
-                models.Task(
-                    name=name,
-                    project_id=nt_project_id,
-                    author_id=nt_member_id,
-                    created_at=1,
-                    last_activity_at=1,
-                    project_section_id=str(nt_section_id),
-                    project_position=float(i),
-                    due_at=parse_timestamp(task.get("due")),
-                    responsible_id=responsible_id,
-                    extra="",
-                    is_all_day=False,  # trello due at has to be specified with time
-                    is_followed=False,
-                    is_abandoned=False,
-                    missed_repeats=0,
-                    ended_at=(
-                        None if not task.get("dueComplete") else parse_timestamp(task.get("due"))
-                    ),
-                    # there is no ended_at time @ trello
-                )
-            ):
-                if task.get("due") and not responsible_id:
-                    set_unassigned_tag(nt_client, str(nt_task.id))
-                _import_tags(
-                    nt_client,
-                    str(nt_task.id),
-                    task,
-                    _import_tags_per_project(
-                        nt_client, trello_client, project, team_id, nt_auth_token
-                    ),
-                )
-                _import_comments(
-                    nt_client,
-                    trello_client,
-                    str(nt_task.id),
-                    task,
-                    imported=imported,
-                    author_id=nt_member_id,
-                )
-                # TODO import attachments, reminders?
-
-
-# pylint: enable=too-many-arguments
-
-
-def _import_tags_per_project(
-    nt_client, trello_client, project: dict, team_id: str, nt_auth_token: str
-) -> dict:
-    """Import trello tags and return name -> NT tag id mapping"""
-    nt_api_tags = api.TagsApi(nt_client)
-    nt_tags = {str(elt.name): str(elt.id) for elt in nt_api_tags.get_tags(fields="id,name")}
-    check_limits(
-        nt_auth_token,
-        team_id,
-        nt_client,
-        "tags",
-        len(trello_tags := trello_client.tags(project.get("id"))) + len(nt_tags),
-    )
-
-    for tag in trello_tags:
-        if (tag_name := (tag.get("name") or "Unnamed")) not in nt_tags and (
-            nt_tag_id := post_tag(nt_client, tag_name, tag.get("color"))
-        ):
-            nt_tags[tag_name] = str(nt_tag_id)
-    return nt_tags
-
-
-def _import_tags(nt_client, nt_task_id: str, task: dict, tags_mapping):
-    """Assign tags to task"""
-    nt_api_tag_assignments = api.TagAssignmentsApi(nt_client)
-    assigned = []
-    for tag in task.get("labels"):
-        if nt_tag_id := tags_mapping.get(tag.get("name") or "Unnamed"):
-            if nt_tag_id in assigned:
+        for card_position, card in enumerate(cards.get(trello_list.get("id")) or []):
+            due = card.get("due")  # always has time
+            nt_task_id, is_new = nz.task(
+                nt_project_id,
+                card.get("name", ""),
+                section_id=section_id,
+                position=card_position,
+                due=datetime.fromisoformat(due) if due else None,
+                responsible_id=first_true(map(responsible.get, card.get("idMembers") or [])),
+                assigned=bool(card.get("idMembers")),
+                ended_at=parse_timestamp(due) if card.get("dueComplete") else None,
+            )
+            if not nt_task_id:
                 continue
-            try:
-                nt_api_tag_assignments.post_tag_assignment(
-                    models.TagAssignment(
-                        id=id16(),
-                        tag_id=nt_tag_id,
-                        task_id=nt_task_id,
-                    )
-                )
-                assigned.append(nt_tag_id)
-            except Exception as exc:
-                print(exc)
+            nz.assign_tags(
+                nt_task_id,
+                (tag_ids.get(_label_name(label)) for label in card.get("labels") or []),
+                is_new,
+            )
+            _import_comments(nz, trello, nt_task_id, card, comments.get(card.get("id")) or [])
+
+
+def _label_name(label: dict) -> str:
+    """name or 'Unnamed'"""
+    return label.get("name") or "Unnamed"
 
 
 def _import_comments(
-    nt_client, trello_client, nt_task_id: str, task, imported=None, author_id=None
+    nz: NozbeImport, trello: TrelloClient, nt_task_id: str, card: dict, comments: list[str]
 ):
-    """Import task-related comments"""
-    tr_task_id = task.get("id")
-    nt_api_comments = api.CommentsApi(nt_client)
-    comments = [{"text": task.get("desc")}] if task.get("desc") else []
-    comments += sorted(
-        trello_client.comments(tr_task_id), key=lambda elt: isoparse(elt.get("date")).timestamp()
-    )
-    for comment in comments:
-        if not exists("comments", body := comment.get("text") or "…", imported):
-            nt_api_comments.post_comment(
-                models.Comment(
-                    body=body,
-                    task_id=nt_task_id,
-                    author_id=author_id or id16(),
-                    created_at=1,
-                    is_team=False,
-                    is_pinned=False,
-                    extra="",
-                )
-            )
+    """desc, comments (oldest first), checklists, attachments -> task"""
+    if desc := card.get("desc"):
+        nz.comment(nt_task_id, desc)
+    for text in comments + checklists(card):
+        nz.comment(nt_task_id, text)
+    for attachment in card.get("attachments") or []:
+        nz.attachment(
+            nt_task_id,
+            attachment.get("name"),
+            attachment.get("url"),
+            bool(attachment.get("isUpload")),
+            trello.headers if on_host(attachment.get("url"), "trello.com") else None,  # OAuth
+        )
 
 
-# def _import_members(nt_client, trello_client, team_id: str):
-#     """ Invite Trello members to Nozbe """
-#     nt_team_members = api.TeamMembersApi(nt_client)
-#     current_members_len = len(
-#         [
-#             elt.get("id")
-#             for elt in nt_team_members.get_team_members()
-#             if elt.get("status") == "active"
-#         ]
-#     )
-#
-# check_limits(
-# nt_auth_token,
-# team_id,
-# nt_client,
-#     "team_members",
-#      len(emails_to_invite := trello_client.members_emails()) + current_members_len
-#
-# )
-#     for email in emails_to_invite:
-#         print("inviting", email)
-#         user_model = models.User(
-#             id=id16(),
-#             invitation_email=email,
-#             name=models.Name(email),
-#             color="avatarColor1",
-#             is_placeholder=True,
-#         )
-#         if nt_user := api.UsersApi(nt_client).post_user(user_model):
-#             team_member_model = models.TeamMember(
-#                 id=id16(),
-#                 team_id=models.Id16(team_id),
-#                 user_id=models.Id16(str(nt_user.id)),
-#                 role="member",
-#                 status="pending",
-#             )
-#             nt_member = api.TeamMembersApi(nt_client).post_team_member(
-#                 team_member_model
-#             )
+def _color(background: str | None) -> str | None:
+    """Trello background -> Nozbe color name"""
+    return {"sky": "lightblue", "lime": "green", "grey": "stone"}.get(background, background)

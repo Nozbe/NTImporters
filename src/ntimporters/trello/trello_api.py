@@ -1,20 +1,20 @@
-""" Simple trello REST API client """
+"""Trello REST client"""
 
-import datetime
-import functools
+import itertools
+from collections import defaultdict
 
-import requests
-from ntimporters.utils import ImportException
+from ntimporters.utils import ImportException, checklist, dig, log, session
 
-# board -> project
-# list ->  section
-# card -> task
-# comment -> comment
-# checklist -> comment
+ACTIONS_LIMIT = 1000  # API maximum
+BATCH_LIMIT = 10  # API maximum
+BOARD_NESTED = "lists=all&labels=all&labels_limit=1000&members=all"
+CARD_FIELDS = "name,desc,due,dueComplete,idList,idMembers,labels,pos"
+
+# board -> project, list -> section, card -> task, comment/checklist -> comment
 
 
 class TrelloClient:
-    """Simple trello REST API client"""
+    """Trello REST API v1"""
 
     api_path = "https://api.trello.com/1"
 
@@ -22,110 +22,84 @@ class TrelloClient:
         self.headers = {
             "Authorization": f'OAuth oauth_consumer_key="{app_key}", oauth_token="{token}"'
         }
-        user_data = self.user()
-        self.author_email = str(user_data.get("email"))
+        self.session = session(self.headers)
+        user_data = self._req("members/me")
+        self.author_id = user_data.get("id")
         self.boards_ids = user_data.get("idBoards", [])
 
     def _req(self, suffix) -> dict:
-        if resp := requests.get(f"{self.api_path}/{suffix}", headers=self.headers):
-            return resp.json()
-        else:
-            raise ImportException(
-                f"Connection to trello failed ({resp.status_code}). Wrong credentials?"
-            )
-        return {}
+        """GET api_path/suffix -> JSON; ImportException on failure"""
+        resp = self.session.get(f"{self.api_path}/{suffix}", timeout=60)
+        if resp.status_code in (401, 403):
+            raise ImportException("Trello: wrong credentials (API key or token)")
+        if not resp.ok:
+            raise ImportException(f"Connection to trello failed ({resp.status_code})")
+        return resp.json()
 
-    def user(self) -> dict:
-        """Get user details"""
-        return self._req("members/me")
-
-    def project_stars(self, project_id: str) -> bool:
-        """Get project stars"""
-        return bool(self._req(f"boards/{project_id}/boardStars"))
-
-    def projects(self) -> dict:
-        """Get projects"""
+    def projects(self) -> list[dict]:
+        """boards + lists, labels, members; is_fav: starred by me"""
+        starred = {star.get("idBoard") for star in self._req("members/me/boardStars")}
         return [
-            self._req(f"boards/{board_id}") | {"is_fav": self.project_stars(board_id)}
+            self._req(f"boards/{board_id}?{BOARD_NESTED}") | {"is_fav": board_id in starred}
             for board_id in self.boards_ids
         ]
 
-    def sections(self, project_id: str) -> dict:
-        """Get project sections"""
-        return self._req(f"boards/{project_id}/lists")
+    def members_emails(self, boards: list[dict]) -> dict:
+        """member id -> email, boards' members but me; email only via members/{id},
+        batched by BATCH_LIMIT, failed entry refetched alone; still failing: None"""
+        member_ids = {
+            member.get("id") for board in boards for member in board.get("members") or []
+        } - {self.author_id}
+        emails = {}
+        for chunk in itertools.batched(member_ids, BATCH_LIMIT, strict=False):
+            urls = ",".join(f"/members/{member_id}?fields=email" for member_id in chunk)
+            for member_id, entry in zip(chunk, self._req(f"batch?urls={urls}"), strict=True):
+                emails[member_id] = (entry.get("200") or self._member(member_id)).get("email")
+        return emails
 
-    def tags(self, project_id: str) -> dict:
-        """Get tags related with board"""
-        return [elt for elt in self._req(f"boards/{project_id}/labels")]
+    def _member(self, member_id: str) -> dict:
+        """members/{member_id}; {} (logged) if hidden or gone"""
+        try:
+            return self._req(f"members/{member_id}")
+        except ImportException:
+            log.warning("Trello member %s not readable", member_id, exc_info=True)
+            return {}
 
-    def tasks(self, section_id: str) -> dict:
-        """Get section tasks"""
-        return self._req(f"lists/{section_id}/cards")
+    def tasks(self, board_id: str) -> dict[str, list[dict]]:
+        """list id -> open cards by pos (archived lists too), + checklists, attachments"""
+        lists = defaultdict(list)
+        for card in sorted(
+            self._req(
+                f"boards/{board_id}/cards/open?fields={CARD_FIELDS}&checklists=all&attachments=true"
+            ),
+            key=lambda card: card.get("pos") or 0,
+        ):
+            lists[card.get("idList")].append(card)
+        return lists
 
-    def attachments(self, task_id: str) -> dict:
-        """Get task attachments"""
-        return self._req(f"cards/{task_id}/attachments")
+    def comments(self, board_id: str) -> dict[str, list[str]]:
+        """card id -> comment texts, oldest first"""
+        actions, before = [], ""
+        while page := self._req(
+            f"boards/{board_id}/actions?filter=commentCard&limit={ACTIONS_LIMIT}{before}"
+        ):
+            actions += page
+            if len(page) < ACTIONS_LIMIT:
+                break
+            before = f"&before={page[-1].get('id')}"  # newest first
+        cards = defaultdict(list)
+        for action in sorted(actions, key=lambda elt: elt.get("date") or ""):
+            cards[dig(action, "data.card.id")].append(dig(action, "data.text"))
+        return cards
 
-    @functools.cache
-    def member(self, member_id: str) -> dict:
-        """Get member by id"""
-        return self._req(f"members/{member_id}")
 
-    def members_emails(self) -> dict:
-        """Return all emails related with boards"""
-        members_emails = {}
-        for board_id in self.boards_ids:
-            for member in self._req(f"boards/{board_id}/members"):
-                if (email := self.member(member.get("id")).get("email")) != self.user().get(
-                    "email"
-                ):
-                    members_emails[member.get("id")] = email
-
-        return members_emails
-
-    def attachment(self, attachment_url: str):
-        """Get attachment body"""
-        if resp := requests.get(attachment_url, stream=True, headers=self.headers):
-            if resp and hasattr(resp, "raw"):
-                return resp.raw
-        return b""
-
-    def checklists(self, task_id: str) -> dict:
-        """Get checklists as comments"""
-        return self._parse_checklists(self._req(f"cards/{task_id}/checklists"))
-
-    def comments(self, task_id: str) -> dict:
-        """Get comments"""
-        comments = []
-        if resp := self._req(f"cards/{task_id}/actions"):
-            for element in resp:
-                edata = element.get("data")
-                if edata.get("card", {}).get("id") == task_id:
-                    comments.append(
-                        {
-                            "text": edata.get("text"),
-                            "date": element.get("date"),
-                            "author_email": str(
-                                self.member(element.get("idMemberCreator")).get("email")
-                                or self.author_email
-                            ),
-                        }
-                    )
-        return comments + self.checklists(task_id)
-
-    def _parse_checklists(self, checklists: list) -> list[dict]:
-        """Convert checklists into list of NT comments"""
-        parsed = []
-        for checklist in checklists:
-            comment_body = []
-            for item in checklist.get("checkItems"):
-                checked = "- [ ]" if item.get("state") == "incomplete" else "- [x]"
-                comment_body.append(f"{checked} {item.get('name')}")
-            parsed.append(
-                {
-                    "author_email": str(self.author_email),
-                    "text": "\n".join(comment_body),
-                    "date": datetime.datetime.now().isoformat(),
-                }
-            )
-        return parsed
+def checklists(card: dict) -> list[str]:
+    """non-empty checklists -> markdown task lists"""
+    return [
+        checklist(
+            (item.get("name"), item.get("state") != "incomplete")
+            for item in elt.get("checkItems") or []
+        )
+        for elt in card.get("checklists") or []
+        if elt.get("checkItems")
+    ]
