@@ -310,6 +310,14 @@ def test_recurrence_put_refused_deletes_recurrence(nt, nz):
     assert nt.api.CommentsApi().post_comment.call_args.args[0].body == "daily"
 
 
+def test_recurrence_import_stopped_deletes_recurrence(nt, nz):
+    nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
+    nt.api.TasksApi().put_task_by_id.side_effect = ApiException(status=503)
+    with pytest.raises(ImportException):
+        nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
+    nt.api.TaskRecurrencesApi().delete_task_recurrence_by_id.assert_called_once_with("r" * 16)
+
+
 def test_recurrence_put_reply_unreadable_no_fallback(nt, nz):
     nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
     nt.api.TasksApi().put_task_by_id.side_effect = ValueError
@@ -373,11 +381,3 @@ def test_check_group(nt, nz, monkeypatch, group_id, has_projects, limit, groups,
 def test_utc_until(pattern, time_zone, expected):
     """Date UNTIL: end of that day in user's zone, UTC (backend DTSTART has TZID)"""
     assert utc_until(pattern, time_zone) == expected
-
-
-def test_recurrence_import_stopped_deletes_recurrence(nt, nz):
-    nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
-    nt.api.TasksApi().put_task_by_id.side_effect = ApiException(status=503)
-    with pytest.raises(ImportException):
-        nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
-    nt.api.TaskRecurrencesApi().delete_task_recurrence_by_id.assert_called_once_with("r" * 16)

@@ -232,6 +232,26 @@ class NozbeImport:
             return getattr(record, "id", None)
         return None
 
+    def _post_or_undo(
+        self,
+        what: str,
+        send: Callable[[object], object],
+        build: Callable[[], object],
+        undo: Callable[[], object],
+    ) -> str | None:
+        """_post; not posted (refused, invalid or import stopped): undo() first, its failure
+        logged; exception kept"""
+        posted = None
+        try:
+            posted = self._post(what, send, build)
+        finally:
+            if not posted:
+                try:
+                    undo()
+                except OpenApiException, ValueError:
+                    log.warning("%s: created record not deleted", what, exc_info=True)
+        return posted
+
     @cached_property
     def _team_projects(self) -> list[dict]:
         return fetch_all(
@@ -353,22 +373,14 @@ class NozbeImport:
     def _add_to_group(self, project_id: str):
         """new project into import group; refused or import stopped: project deleted
         (still empty), ImportException (re-run would duplicate)"""
-        grouped = None
-        try:
-            grouped = self._post(
-                f"project {project_id} in group",
-                api.GroupAssignmentsApi(self.client).post_group_assignment,
-                lambda: models.GroupAssignment(
-                    id=id16(), object_id=project_id, group_id=self._group(), group_type="project"
-                ),
-            )
-        finally:
-            if not grouped:
-                try:
-                    api.ProjectsApi(self.client).delete_project_by_id(project_id)
-                except OpenApiException, ValueError:
-                    log.warning("project %s outside group not deleted", project_id, exc_info=True)
-        if not grouped:
+        if not self._post_or_undo(
+            f"project {project_id} in group",
+            api.GroupAssignmentsApi(self.client).post_group_assignment,
+            lambda: models.GroupAssignment(
+                id=id16(), object_id=project_id, group_id=self._group(), group_type="project"
+            ),
+            lambda: api.ProjectsApi(self.client).delete_project_by_id(project_id),
+        ):
             raise ImportException(f"Can't add project to group {self.group_name!r}")
 
     def section(
@@ -471,20 +483,17 @@ class NozbeImport:
     def _mark_imported(self, task_id: str) -> bool:
         """group_name tag on new Single Task (how re-runs find it, see __init__); not tagged
         (refused or import stopped): task deleted (re-run would duplicate), False"""
-        tagged = None
-        try:
-            tagged = (tag_id := self._tag(self.group_name)) and self._post(
-                f"tag {tag_id} on task {task_id}",
+        return bool(
+            self._post_or_undo(
+                f"import tag on Single Task {task_id}",
                 api.TagAssignmentsApi(self.client).post_tag_assignment,
-                lambda: models.TagAssignment(id=id16(), tag_id=tag_id, task_id=task_id),
+                # tag missing (None): invalid, so undone too
+                lambda: models.TagAssignment(
+                    id=id16(), tag_id=self._tag(self.group_name), task_id=task_id
+                ),
+                lambda: api.TasksApi(self.client).delete_task_by_id(task_id),
             )
-        finally:
-            if not tagged:
-                try:
-                    api.TasksApi(self.client).delete_task_by_id(task_id)
-                except OpenApiException, ValueError:
-                    log.warning("untagged Single Task %s not deleted", task_id, exc_info=True)
-        return bool(tagged)
+        )
 
     @cached_property
     def _reminded(self) -> set[str]:
@@ -596,27 +605,19 @@ class NozbeImport:
                 id=id16(), project_id=project_id, current_task_id=task_id, pattern=pattern
             ),
         )
-        linked = None
-        try:
-            linked = recurrence_id and self._post(
-                f"recurrence of task {task_id}",
-                # PUT /tasks resets is_all_day unless sent; None: flags left as they are
-                lambda task: api.TasksApi(self.client).put_task_by_id(task_id, task),
-                lambda: models.Task(
-                    id=task_id,  # reply unreadable: PUT still counts as done
-                    recurrence_id=recurrence_id,
-                    is_all_day=is_all_day,
-                    is_followed=None,
-                    is_abandoned=None,
-                ),
-            )
-        finally:
-            if recurrence_id and not linked:
-                try:
-                    api.TaskRecurrencesApi(self.client).delete_task_recurrence_by_id(recurrence_id)
-                except OpenApiException, ValueError:
-                    log.warning("loose recurrence %s not deleted", recurrence_id, exc_info=True)
-        if not linked:
+        if not recurrence_id or not self._post_or_undo(
+            f"recurrence of task {task_id}",
+            # PUT /tasks resets is_all_day unless sent; None: flags left as they are
+            lambda task: api.TasksApi(self.client).put_task_by_id(task_id, task),
+            lambda: models.Task(
+                id=task_id,  # reply unreadable: PUT still counts as done
+                recurrence_id=recurrence_id,
+                is_all_day=is_all_day,
+                is_followed=None,
+                is_abandoned=None,
+            ),
+            lambda: api.TaskRecurrencesApi(self.client).delete_task_recurrence_by_id(recurrence_id),
+        ):
             self.comment(task_id, fallback)
 
     @cached_property
