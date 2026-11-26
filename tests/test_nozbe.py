@@ -75,11 +75,13 @@ def test_run_safely():
 )
 def test_task_responsible(nt, nz, project_id, due_at, responsible_id, assigned, expected, tagged):
     nt.api.TasksApi().post_task.return_value = NS(id=NEW)
+    nt.api.TagsApi().post_tag.return_value = NS(id="i" * 16)  # Single Tasks' import tag
     due = date(2024, 1, 1) if due_at else None
     task = nz.task(project_id, "New", due=due, responsible_id=responsible_id, assigned=assigned)
     assert task == (NEW, True)
     assert nt.api.TasksApi().post_task.call_args.args[0].responsible_id == expected
-    assert nt.api.TagAssignmentsApi().post_tag_assignment.called == tagged
+    assigned_tags = nt.api.TagAssignmentsApi().post_tag_assignment.call_args_list
+    assert any(call.args[0].tag_id == "t" * 16 for call in assigned_tags) == tagged
 
 
 def test_due_fields_naive_as_utc():
@@ -237,11 +239,12 @@ def test_project_group_refused_stops_before_project(nt, nz):
     nt.api.ProjectsApi().post_project.assert_not_called()
 
 
-def test_project_outside_group_deleted(nt, nz):
+@pytest.mark.parametrize("status, match", [(400, "group"), (503, "failed")])  # 503: import stopped
+def test_project_outside_group_deleted(nt, nz, status, match):
     nz.team_id = "t" * 16
     nt.api.ProjectsApi().post_project.return_value = NS(id=NEW)
-    nt.api.GroupAssignmentsApi().post_group_assignment.side_effect = ApiException(status=400)
-    with pytest.raises(ImportException, match="group"):
+    nt.api.GroupAssignmentsApi().post_group_assignment.side_effect = ApiException(status=status)
+    with pytest.raises(ImportException, match=match):
         nz.project("New")
     nt.api.ProjectsApi().delete_project_by_id.assert_called_once_with(NEW)
 
@@ -287,6 +290,9 @@ def test_single_tasks_imported_only_if_tagged(nt):
     assert nz.task(SAP, "Call") == (NEW, True)
     posted = nt.api.TagAssignmentsApi().post_tag_assignment.call_args.args[0]
     assert (posted.tag_id, posted.task_id) == (TAG, NEW)
+    nt.api.TagAssignmentsApi().post_tag_assignment.side_effect = ApiException(status=400)
+    assert nz.task(SAP, "Text") == (None, False)  # untagged: re-run would duplicate
+    nt.api.TasksApi().delete_task_by_id.assert_called_once_with(NEW)
 
 
 def test_recurrence_put_keeps_task_flags(nt, nz):
@@ -294,6 +300,14 @@ def test_recurrence_put_keeps_task_flags(nt, nz):
     nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
     put = nt.api.TasksApi().put_task_by_id.call_args.args[1]
     assert put.to_dict() == {"id": OLD, "recurrence_id": "r" * 16, "is_all_day": True}
+
+
+def test_recurrence_put_refused_deletes_recurrence(nt, nz):
+    nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
+    nt.api.TasksApi().put_task_by_id.side_effect = ApiException(status=400)
+    nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
+    nt.api.TaskRecurrencesApi().delete_task_recurrence_by_id.assert_called_once_with("r" * 16)
+    assert nt.api.CommentsApi().post_comment.call_args.args[0].body == "daily"
 
 
 def test_recurrence_put_reply_unreadable_no_fallback(nt, nz):
@@ -359,3 +373,11 @@ def test_check_group(nt, nz, monkeypatch, group_id, has_projects, limit, groups,
 def test_utc_until(pattern, time_zone, expected):
     """Date UNTIL: end of that day in user's zone, UTC (backend DTSTART has TZID)"""
     assert utc_until(pattern, time_zone) == expected
+
+
+def test_recurrence_import_stopped_deletes_recurrence(nt, nz):
+    nt.api.TaskRecurrencesApi().post_task_recurrence.return_value = NS(id="r" * 16)
+    nt.api.TasksApi().put_task_by_id.side_effect = ApiException(status=503)
+    with pytest.raises(ImportException):
+        nz.recurrence(PROJECT, OLD, "FREQ=DAILY", True, "daily")
+    nt.api.TaskRecurrencesApi().delete_task_recurrence_by_id.assert_called_once_with("r" * 16)

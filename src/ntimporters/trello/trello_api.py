@@ -94,11 +94,12 @@ class TrelloClient:
 
 
 def checklists(card: dict) -> list[str]:
-    """checklists -> markdown task lists"""
+    """non-empty checklists -> markdown task lists"""
     return [
         checklist(
             (item.get("name"), item.get("state") != "incomplete")
             for item in elt.get("checkItems") or []
         )
         for elt in card.get("checklists") or []
+        if elt.get("checkItems")
     ]

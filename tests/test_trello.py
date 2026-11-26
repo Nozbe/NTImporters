@@ -85,7 +85,8 @@ def test_checklists():
                     {"state": "incomplete", "name": "x"},
                     {"state": "complete", "name": "y"},
                 ]
-            }
+            },
+            {"checkItems": []},  # no items: no "…" comment
         ]
     }
     assert checklists(card) == ["- [ ] x\n- [x] y"]
